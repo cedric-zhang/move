@@ -344,25 +344,21 @@ def migrate_execute(req: MigrateExecuteRequest):
             templateid = tog_tpl["templateid"]
             groupid = get_groupid_for_template(tog_tpl["tognix_name"], tog_groups)
 
-            # 构建接口参数 - 只传必需字段，根据接口类型不同
-            iface_params = {
+            # 构建接口参数
+            # 始终使用 IP 方式 (useip=1)，避免 DNS 问题
+            iface = {
                 "type": iface_type,
                 "main": 1,
                 "useip": 1,
                 "ip": ip,
-                "dns": "",
                 "port": port,
             }
 
-            # SNMP 接口需要额外参数
+            # SNMP 接口需要版本参数
             if iface_type == 2:
-                # SNMPv2c: details 包含 version 和 community
-                iface_params["details"] = {
-                    "version": 2,
-                    "bulk": 1
-                }
+                iface["version"] = 2  # SNMPv2c
 
-            interfaces = [iface_params]
+            interfaces = [iface]
 
             existing = tog_client.get_host_by_name(host_name)
 
@@ -408,13 +404,14 @@ def migrate_execute(req: MigrateExecuteRequest):
                     value = m["value"]
                     if "SNMP_COMMUNITY" in macro:
                         try:
-                            cred_id = tog_client.create_credential(
-                                name=f"SNMP-{value}",
-                                cred_type="SNMPv2",
-                                community=value
+                            cred_id = tog_client.create_credential_snmpv2(
+                                name=value,
+                                community=value,
+                                port=port
                             )
                             cred_results.append({"macro": macro, "value": value, "status": "created" if cred_id else "exists"})
-                            cred_created += 1
+                            if cred_id:
+                                cred_created += 1
                         except Exception as e:
                             cred_results.append({"macro": macro, "status": "failed", "error": str(e)})
 

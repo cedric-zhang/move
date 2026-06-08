@@ -47,7 +47,7 @@ class TognixClient:
             return False
 
     def get_version(self) -> str:
-        """获取 Tognix 版本（apiinfo.version 不需要 auth）"""
+        """获取 Tognix 版本"""
         payload = {
             "jsonrpc": "2.0",
             "method": "apiinfo.version",
@@ -94,12 +94,9 @@ class TognixClient:
             "version": self.get_version(),
         }
 
-    def create_host(self, host: str, name: str, interfaces: List[Dict], 
+    def create_host(self, host: str, name: str, interfaces: List[Dict],
                    groupid: str, templateid: str) -> str:
-        """
-        创建主机
-        返回新主机 hostid
-        """
+        """创建主机，返回 hostid"""
         result = self._call("host.create", {
             "host": host,
             "name": name,
@@ -120,27 +117,49 @@ class TognixClient:
         self._call("host.update", params)
         return True
 
-    def create_credential(self, name: str, cred_type: str, 
-                         community: str = None, username: str = None,
-                         password: str = None) -> str:
+    def create_credential_snmpv2(self, name: str, community: str, port: str = "161") -> str:
         """
-        创建凭据（SNMP Community 等）
-        返回凭据 ID
+        创建 SNMPv2 凭据
+        name: 凭据名称
+        community: SNMP community string
+        port: SNMP 端口
         """
         params = {
             "name": name,
-            "type": cred_type,
+            "type": "SNMPv2",
+            "protocol": "SNMPv2",
+            "port": port,
+            "password": community,  # community string 作为 password
+            "timeout": "6",
         }
-        if community:
-            params["community"] = community
-        if username:
-            params["username"] = username
-        if password:
-            params["password"] = password
-        
+        try:
+            result = self._call("credentials.create", params)
+            return result.get("credentialids", [result])[0] if result else ""
+        except Exception as e:
+            # 凭据可能已存在，返回空
+            return ""
+
+    def create_credential_snmpv3(self, name: str, user: str, authpass: str,
+                                 privpass: str = None, port: str = "161") -> str:
+        """
+        创建 SNMPv3 凭据
+        """
+        params = {
+            "name": name,
+            "type": "SNMPv3",
+            "protocol": "SNMPv3",
+            "port": port,
+            "user": user,
+            "password": authpass,
+            "snmpv3_securitylevel": "2",  # authPriv
+            "snmpv3_authprotocol": "0",   # MD5
+            "snmpv3_privprotocol": "0",   # DES
+            "timeout": "6",
+        }
+        if privpass:
+            params["privpassword"] = privpass
         try:
             result = self._call("credentials.create", params)
             return result.get("credentialids", [result])[0] if result else ""
         except Exception:
-            # 凭据可能已存在，忽略错误
             return ""
