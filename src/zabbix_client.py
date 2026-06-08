@@ -3,7 +3,7 @@ Zabbix API 客户端
 """
 import requests
 import json
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 
 class ZabbixClient:
@@ -60,6 +60,17 @@ class ZabbixClient:
             "selectMacros": ["macro", "value"],
         })
 
+    def get_host_detail(self, hostid: str) -> dict:
+        """获取单个主机详情（含完整接口信息）"""
+        result = self._call("host.get", {
+            "output": ["hostid", "host", "name", "status"],
+            "selectInterfaces": ["interfaceid", "ip", "dns", "port", "type", "main", "details"],
+            "selectParentTemplates": ["host", "name"],
+            "selectMacros": ["macro", "value"],
+            "hostids": [hostid],
+        })
+        return result[0] if result else None
+
     def get_host_groups(self) -> list:
         """获取所有主机组"""
         return self._call("hostgroup.get", {
@@ -71,6 +82,16 @@ class ZabbixClient:
         return self._call("template.get", {
             "output": ["templateid", "host", "name"],
         })
+
+    def configuration_export(self, hostids: List[str]) -> str:
+        """导出主机配置为 XML"""
+        result = self._call("configuration.export", {
+            "options": {
+                "hosts": hostids,
+            },
+            "format": "xml",
+        })
+        return result
 
     def get_stats(self) -> dict:
         """获取源端统计信息"""

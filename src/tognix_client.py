@@ -84,6 +84,11 @@ class TognixClient:
         })
         return result[0] if result else None
 
+    def delete_host(self, hostid: str) -> bool:
+        """删除主机"""
+        result = self._call("host.delete", [hostid])
+        return True
+
     def get_stats(self) -> dict:
         """获取目标端统计信息"""
         hosts = len(self.get_hosts())
@@ -93,6 +98,24 @@ class TognixClient:
             "templates": templates,
             "version": self.get_version(),
         }
+
+    def configuration_import(self, xml_string: str) -> bool:
+        """导入 XML 配置"""
+        result = self._call("configuration.import", {
+            "format": "xml",
+            "rules": {
+                "hosts": {
+                    "createMissing": True,
+                    "updateExisting": True,
+                },
+                "templates": {
+                    "createMissing": False,
+                    "updateExisting": False,
+                },
+            },
+            "source": xml_string,
+        })
+        return result
 
     def create_host(self, host: str, name: str, interfaces: List[Dict],
                    groupid: str, templateid: str) -> str:

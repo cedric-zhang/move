@@ -21,6 +21,7 @@ from src.config import APP_CONFIG
 from src.zabbix_client import ZabbixClient
 from src.tognix_client import TognixClient
 from src.template_mapper import TemplateMapper
+from src.xml_transformer import XMLTransformer, INTERFACE_TYPE_MAP
 
 app = FastAPI(title="Tognix-Move", version="0.1.0")
 
@@ -219,6 +220,9 @@ def migrate_preview(req: MigratePreviewRequest):
 
             tog_tpl = mapper.map(src_tpl)
 
+            # 检查是否需要接口补全（模板继承型主机）
+            needs_interface_fix = not main_iface.get("ip") or main_iface.get("ip") == ""
+
             host_info = {
                 "hostid": h["hostid"],
                 "host": h["host"],
@@ -227,7 +231,8 @@ def migrate_preview(req: MigratePreviewRequest):
                 "port": main_iface.get("port", ""),
                 "interface_type": main_iface.get("type", ""),
                 "src_template": src_tpl,
-                "tognix_template": tog_tpl,
+                "tognix_template": tog_tpl["tognix_name"] if tog_tpl else None,
+                "needs_interface_fix": needs_interface_fix,
                 "item_count": 0,
                 "macros": h.get("macros", []),
                 "suggested_groupid": get_groupid_for_template(tog_tpl["tognix_name"] if tog_tpl else "", tog_groups),
@@ -282,7 +287,7 @@ class MigrateExecuteRequest(BaseModel):
 
 @app.post("/api/migrate/execute")
 def migrate_execute(req: MigrateExecuteRequest):
-    """执行迁移：创建主机 + 凭证"""
+    """执行迁移：XML 导入方式"""
     zbx_client = ZabbixClient(req.zabbix_url)
     if not zbx_client.login(req.zabbix_username, req.zabbix_password):
         return {"success": False, "error": "Zabbix 登录失败"}
@@ -293,16 +298,13 @@ def migrate_execute(req: MigrateExecuteRequest):
 
     try:
         zbx_hosts = zbx_client.get_hosts()
-        tog_templates = tog_client.get_templates()
-        tog_groups = tog_client.get_host_groups()
-
-        mapper = TemplateMapper(tog_templates)
 
         results = []
         created = 0
         failed = 0
         skipped = 0
 
+        # 逐台主机导入（批量导入风险：一台失败会导致整批失败）
         for hostid in req.selected_hosts:
             host_data = None
             for h in zbx_hosts:
@@ -315,18 +317,8 @@ def migrate_execute(req: MigrateExecuteRequest):
                 continue
 
             host_name = host_data["host"]
-            display_name = host_data["name"]
 
-            main_iface = {}
-            for iface in host_data.get("interfaces", []):
-                if iface.get("main") == "1":
-                    main_iface = iface
-                    break
-
-            ip = main_iface.get("ip", "127.0.0.1")
-            port = main_iface.get("port", "10050")
-            iface_type = int(main_iface.get("type", "1"))
-
+            # 获取模板名
             templates = [t["host"] for t in host_data.get("parentTemplates", [])]
             src_tpl = templates[0] if templates else None
 
@@ -335,73 +327,61 @@ def migrate_execute(req: MigrateExecuteRequest):
                 skipped += 1
                 continue
 
-            tog_tpl = mapper.map(src_tpl)
-            if not tog_tpl:
-                results.append({"hostid": hostid, "host": host_name, "status": "skipped", "reason": "模板未映射"})
-                skipped += 1
-                continue
+            try:
+                # 1. 获取主机详情（完整接口信息）
+                host_detail = zbx_client.get_host_detail(hostid)
 
-            templateid = tog_tpl["templateid"]
-            groupid = get_groupid_for_template(tog_tpl["tognix_name"], tog_groups)
+                # 2. 导出 XML
+                xml_raw = zbx_client.configuration_export([hostid])
 
-            # 构建接口参数 - Tognix 要求必须有 templateid
-            iface = {
-                "type": iface_type,
-                "main": 1,
-                "useip": 1,
-                "ip": ip,
-                "port": port,
-                "templateid": templateid,  # Tognix 必须！
-            }
-
-            # SNMP 接口需要 details 字段（版本和 community）
-            if iface_type == 2:
-                # 查找该主机的 SNMP community
-                community = "public"  # 默认
-                for m in host_data.get("macros", []):
-                    if "SNMP_COMMUNITY" in m["macro"]:
-                        community = m["value"]
+                # 3. 准备接口补全信息
+                main_iface = {}
+                for iface in host_detail.get("interfaces", []):
+                    if iface.get("main") == "1":
+                        main_iface = iface
                         break
-                iface["details"] = {
-                    "version": 2,  # SNMPv2c
-                    "community": community,
+
+                interface_info = {
+                    "ip": main_iface.get("ip", "127.0.0.1"),
+                    "port": main_iface.get("port", "10050"),
+                    "type": main_iface.get("type", "1"),
                 }
 
-            interfaces = [iface]
+                # 4. 准备宏字典
+                macros_dict = {}
+                for m in host_detail.get("macros", []):
+                    macros_dict[m["macro"]] = m["value"]
 
-            existing = tog_client.get_host_by_name(host_name)
+                # 5. XML 转换
+                transformer = XMLTransformer(macros_dict)
+                xml_transformed = transformer.transform(xml_raw, interface_info)
 
-            try:
-                if existing:
-                    tog_client.update_host(existing["hostid"], templateid, interfaces)
-                    results.append({
-                        "hostid": hostid,
-                        "host": host_name,
-                        "status": "updated",
-                        "tognix_hostid": existing["hostid"],
-                        "template": tog_tpl["tognix_name"]
-                    })
-                    created += 1
-                else:
-                    new_hostid = tog_client.create_host(
-                        host=host_name,
-                        name=display_name,
-                        interfaces=interfaces,
-                        groupid=groupid,
-                        templateid=templateid
-                    )
+                # 6. 导入到 Tognix
+                import_result = tog_client.configuration_import(xml_transformed)
+
+                # 7. 检查是否成功
+                if import_result:
                     results.append({
                         "hostid": hostid,
                         "host": host_name,
                         "status": "created",
-                        "tognix_hostid": new_hostid,
-                        "template": tog_tpl["tognix_name"]
+                        "template": src_tpl
                     })
                     created += 1
+                else:
+                    results.append({
+                        "hostid": hostid,
+                        "host": host_name,
+                        "status": "failed",
+                        "error": "configuration.import 返回失败"
+                    })
+                    failed += 1
+
             except Exception as e:
                 results.append({"hostid": hostid, "host": host_name, "status": "failed", "error": str(e)})
                 failed += 1
 
+        # 凭证迁移（独立 API）
         cred_results = []
         cred_created = 0
         if req.migrate_credentials:
@@ -413,6 +393,14 @@ def migrate_execute(req: MigrateExecuteRequest):
                     value = m["value"]
                     if "SNMP_COMMUNITY" in macro:
                         try:
+                            # 获取该主机的端口
+                            host_detail = zbx_client.get_host_detail(h["hostid"])
+                            port = "161"
+                            for iface in host_detail.get("interfaces", []):
+                                if iface.get("main") == "1" and iface.get("type") == "2":
+                                    port = iface.get("port", "161")
+                                    break
+
                             cred_id = tog_client.create_credential_snmpv2(
                                 name=value,
                                 community=value,
