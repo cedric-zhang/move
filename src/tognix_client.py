@@ -5,7 +5,7 @@ Tognix API 与 Zabbix JSON-RPC 完全兼容
 import requests
 import json
 import urllib3
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 urllib3.disable_warnings()
 
@@ -70,11 +70,19 @@ class TognixClient:
         })
 
     def get_hosts(self) -> list:
-        """获取所有主机（保留扩展性）"""
+        """获取所有主机"""
         return self._call("host.get", {
             "output": ["hostid", "host", "name", "status"],
             "selectInterfaces": ["ip", "dns", "port", "type"],
         })
+
+    def get_host_by_name(self, name: str) -> Optional[Dict]:
+        """根据主机名查询主机（幂等性检查）"""
+        result = self._call("host.get", {
+            "output": ["hostid", "host", "name"],
+            "filter": {"host": [name]},
+        })
+        return result[0] if result else None
 
     def get_stats(self) -> dict:
         """获取目标端统计信息"""
@@ -85,3 +93,54 @@ class TognixClient:
             "templates": templates,
             "version": self.get_version(),
         }
+
+    def create_host(self, host: str, name: str, interfaces: List[Dict], 
+                   groupid: str, templateid: str) -> str:
+        """
+        创建主机
+        返回新主机 hostid
+        """
+        result = self._call("host.create", {
+            "host": host,
+            "name": name,
+            "interfaces": interfaces,
+            "groups": [{"groupid": groupid}],
+            "templates": [{"templateid": templateid}],
+        })
+        return result["hostids"][0]
+
+    def update_host(self, hostid: str, templateid: str, interfaces: List[Dict] = None) -> bool:
+        """更新主机模板"""
+        params = {
+            "hostid": hostid,
+            "templates": [{"templateid": templateid}],
+        }
+        if interfaces:
+            params["interfaces"] = interfaces
+        self._call("host.update", params)
+        return True
+
+    def create_credential(self, name: str, cred_type: str, 
+                         community: str = None, username: str = None,
+                         password: str = None) -> str:
+        """
+        创建凭据（SNMP Community 等）
+        返回凭据 ID
+        """
+        params = {
+            "name": name,
+            "type": cred_type,
+        }
+        if community:
+            params["community"] = community
+        if username:
+            params["username"] = username
+        if password:
+            params["password"] = password
+        
+        try:
+            result = self._call("credentials.create", params)
+            return result.get("credentialids", [result])[0] if result else ""
+        except Exception:
+            # 凭据可能已存在，忽略错误
+            return ""
