@@ -344,19 +344,28 @@ def migrate_execute(req: MigrateExecuteRequest):
             templateid = tog_tpl["templateid"]
             groupid = get_groupid_for_template(tog_tpl["tognix_name"], tog_groups)
 
-            # 构建接口参数
-            # 始终使用 IP 方式 (useip=1)，避免 DNS 问题
+            # 构建接口参数 - Tognix 要求必须有 templateid
             iface = {
                 "type": iface_type,
                 "main": 1,
                 "useip": 1,
                 "ip": ip,
                 "port": port,
+                "templateid": templateid,  # Tognix 必须！
             }
 
-            # SNMP 接口需要版本参数
+            # SNMP 接口需要 details 字段（版本和 community）
             if iface_type == 2:
-                iface["version"] = 2  # SNMPv2c
+                # 查找该主机的 SNMP community
+                community = "public"  # 默认
+                for m in host_data.get("macros", []):
+                    if "SNMP_COMMUNITY" in m["macro"]:
+                        community = m["value"]
+                        break
+                iface["details"] = {
+                    "version": 2,  # SNMPv2c
+                    "community": community,
+                }
 
             interfaces = [iface]
 
