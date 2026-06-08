@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from src.config import APP_CONFIG
 from src.zabbix_client import ZabbixClient
+from src.tognix_client import TognixClient
 
 app = FastAPI(title="Tognix-Move", version="0.1.0")
 
@@ -124,6 +125,56 @@ def zabbix_preview(req: ZabbixPreviewRequest):
             "credentials": list(credentials.values()),
             "total_hosts": len(hosts),
             "total_credentials": len(credentials),
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# === Tognix 目标端接口 ===
+
+class TognixConnectRequest(BaseModel):
+    url: str
+    username: str
+    password: str
+
+
+@app.post("/api/tognix/connect")
+def tognix_connect(req: TognixConnectRequest):
+    """测试 Tognix 目标连接"""
+    client = TognixClient(req.url)
+    if not client.login(req.username, req.password):
+        return {"success": False, "error": "登录失败，请检查账号密码"}
+
+    try:
+        stats = client.get_stats()
+        return {"success": True, **stats}
+    except Exception as e:
+        return {"success": False, "error": f"连接失败: {str(e)}", "version": client.get_version()}
+
+
+class TognixPreviewRequest(BaseModel):
+    url: str
+    username: str
+    password: str
+
+
+@app.post("/api/tognix/preview")
+def tognix_preview(req: TognixPreviewRequest):
+    """获取 Tognix 目标端模板和主机组清单"""
+    client = TognixClient(req.url)
+    if not client.login(req.username, req.password):
+        return {"success": False, "error": "登录失败"}
+
+    try:
+        templates = client.get_templates()
+        host_groups = client.get_host_groups()
+
+        return {
+            "success": True,
+            "templates": templates,
+            "host_groups": host_groups,
+            "total_templates": len(templates),
+            "total_host_groups": len(host_groups),
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
