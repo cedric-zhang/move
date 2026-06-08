@@ -21,7 +21,7 @@ from src.config import APP_CONFIG
 from src.zabbix_client import ZabbixClient
 from src.tognix_client import TognixClient
 from src.template_mapper import TemplateMapper
-from src.xml_transformer import XMLTransformer, INTERFACE_TYPE_MAP
+from src.mysql_writer import MySQLWriter
 
 app = FastAPI(title="Tognix-Move", version="0.1.0")
 
@@ -122,7 +122,7 @@ class TognixConnectRequest(BaseModel):
 
 @app.post("/api/tognix/connect")
 def tognix_connect(req: TognixConnectRequest):
-    """测试 Tognix 目标连接"""
+    """测试 Tognix 目标连接（API）"""
     client = TognixClient(req.url)
     if not client.login(req.username, req.password):
         return {"success": False, "error": "登录失败，请检查账号密码"}
@@ -154,6 +154,24 @@ def tognix_preview(req: TognixPreviewRequest):
         return {"success": False, "error": str(e)}
 
 
+# === MySQL 直连接口 ===
+
+class MySQLConnectRequest(BaseModel):
+    host: str
+    port: int = 3306
+    user: str
+    password: str
+    database: str = "tognix"
+
+
+@app.post("/api/mysql/connect")
+def mysql_connect(req: MySQLConnectRequest):
+    """测试 MySQL 直连"""
+    writer = MySQLWriter(req.host, req.port, req.user, req.password, req.database)
+    result = writer.test_connection()
+    return result
+
+
 # === 迁移接口 ===
 
 class MigratePreviewRequest(BaseModel):
@@ -176,10 +194,19 @@ def get_groupid_for_template(template_name: str, host_groups: list) -> str:
         for g in host_groups:
             if "虚拟机" in g["name"]:
                 return g["groupid"]
-    elif "nutanix" in tpl_lower or "fusioncompute" in tpl_lower:
+    elif "nutanix" in tpl_lower or "fusioncompute" in tpl_lower or "h3c" in tpl_lower or "smartx" in tpl_lower:
         for g in host_groups:
             if "超融合" in g["name"]:
                 return g["groupid"]
+    elif "mysql" in tpl_lower or "oracle" in tpl_lower or "mssql" in tpl_lower or "postgres" in tpl_lower:
+        for g in host_groups:
+            if "数据库" in g["name"]:
+                return g["groupid"]
+    elif "存储" in tpl_lower or "storage" in tpl_lower:
+        for g in host_groups:
+            if "存储设备" in g["name"]:
+                return g["groupid"]
+    # 默认：服务器
     for g in host_groups:
         if "服务器" in g["name"]:
             return g["groupid"]
@@ -220,9 +247,6 @@ def migrate_preview(req: MigratePreviewRequest):
 
             tog_tpl = mapper.map(src_tpl)
 
-            # 检查是否需要接口补全（模板继承型主机）
-            needs_interface_fix = not main_iface.get("ip") or main_iface.get("ip") == ""
-
             host_info = {
                 "hostid": h["hostid"],
                 "host": h["host"],
@@ -232,7 +256,7 @@ def migrate_preview(req: MigratePreviewRequest):
                 "interface_type": main_iface.get("type", ""),
                 "src_template": src_tpl,
                 "tognix_template": tog_tpl["tognix_name"] if tog_tpl else None,
-                "needs_interface_fix": needs_interface_fix,
+                "tognix_templateid": tog_tpl["templateid"] if tog_tpl else None,
                 "item_count": 0,
                 "macros": h.get("macros", []),
                 "suggested_groupid": get_groupid_for_template(tog_tpl["tognix_name"] if tog_tpl else "", tog_groups),
@@ -283,29 +307,44 @@ class MigrateExecuteRequest(BaseModel):
     tognix_password: str
     selected_hosts: List[str]
     migrate_credentials: bool = True
+    # MySQL 直连参数
+    mysql_host: str
+    mysql_port: int = 3306
+    mysql_db: str = "tognix"
+    mysql_user: str
+    mysql_password: str
 
 
 @app.post("/api/migrate/execute")
 def migrate_execute(req: MigrateExecuteRequest):
-    """执行迁移：XML 导入方式"""
+    """执行迁移：MySQL 直写方式"""
+    # 1. 连接 Zabbix（读取）
     zbx_client = ZabbixClient(req.zabbix_url)
     if not zbx_client.login(req.zabbix_username, req.zabbix_password):
         return {"success": False, "error": "Zabbix 登录失败"}
 
+    # 2. 连接 Tognix API（读取模板/主机组）
     tog_client = TognixClient(req.tognix_url)
     if not tog_client.login(req.tognix_username, req.tognix_password):
-        return {"success": False, "error": "Tognix 登录失败"}
+        return {"success": False, "error": "Tognix API 登录失败"}
+
+    # 3. 连接 MySQL（写入）
+    mysql_writer = MySQLWriter(req.mysql_host, req.mysql_port, req.mysql_user, req.mysql_password, req.mysql_db)
 
     try:
         zbx_hosts = zbx_client.get_hosts()
+        tog_templates = tog_client.get_templates()
+        tog_groups = tog_client.get_host_groups()
+
+        mapper = TemplateMapper(tog_templates)
 
         results = []
         created = 0
         failed = 0
         skipped = 0
 
-        # 逐台主机导入（批量导入风险：一台失败会导致整批失败）
         for hostid in req.selected_hosts:
+            # 查找主机数据
             host_data = None
             for h in zbx_hosts:
                 if h["hostid"] == hostid:
@@ -317,8 +356,9 @@ def migrate_execute(req: MigrateExecuteRequest):
                 continue
 
             host_name = host_data["host"]
+            display_name = host_data["name"]
 
-            # 获取模板名
+            # 获取模板
             templates = [t["host"] for t in host_data.get("parentTemplates", [])]
             src_tpl = templates[0] if templates else None
 
@@ -327,61 +367,84 @@ def migrate_execute(req: MigrateExecuteRequest):
                 skipped += 1
                 continue
 
-            try:
-                # 1. 获取主机详情（完整接口信息）
-                host_detail = zbx_client.get_host_detail(hostid)
+            # 模板映射
+            tog_tpl = mapper.map(src_tpl)
+            if not tog_tpl:
+                results.append({"hostid": hostid, "host": host_name, "status": "skipped", "reason": "模板未映射"})
+                skipped += 1
+                continue
 
-                # 2. 导出 XML
-                xml_raw = zbx_client.configuration_export([hostid])
+            templateid = int(tog_tpl["templateid"])
+            groupid = int(get_groupid_for_template(tog_tpl["tognix_name"], tog_groups))
 
-                # 3. 准备接口补全信息
-                main_iface = {}
-                for iface in host_detail.get("interfaces", []):
-                    if iface.get("main") == "1":
-                        main_iface = iface
+            # 获取接口信息
+            main_iface = {}
+            for iface in host_data.get("interfaces", []):
+                if iface.get("main") == "1":
+                    main_iface = iface
+                    break
+
+            ip = main_iface.get("ip", "127.0.0.1")
+            port = main_iface.get("port", "10050")
+            iface_type = int(main_iface.get("type", "1"))
+
+            # 获取 SNMP community
+            snmp_community = None
+            if iface_type == 2:
+                for m in host_data.get("macros", []):
+                    if "SNMP_COMMUNITY" in m["macro"]:
+                        snmp_community = m["value"]
                         break
+                if not snmp_community:
+                    snmp_community = "public"
 
-                interface_info = {
-                    "ip": main_iface.get("ip", "127.0.0.1"),
-                    "port": main_iface.get("port", "10050"),
-                    "type": main_iface.get("type", "1"),
-                }
+            # 检查是否已存在
+            mysql_writer.connect()
+            existing = mysql_writer.get_host_by_name(host_name)
+            mysql_writer.close()
 
-                # 4. 准备宏字典
-                macros_dict = {}
-                for m in host_detail.get("macros", []):
-                    macros_dict[m["macro"]] = m["value"]
+            if existing:
+                results.append({
+                    "hostid": hostid,
+                    "host": host_name,
+                    "status": "skipped",
+                    "reason": "主机已存在",
+                    "existing_hostid": existing["hostid"]
+                })
+                skipped += 1
+                continue
 
-                # 5. XML 转换
-                transformer = XMLTransformer(macros_dict)
-                xml_transformed = transformer.transform(xml_raw, interface_info)
+            # MySQL 写入
+            result = mysql_writer.insert_host(
+                host=host_name,
+                name=display_name,
+                ip=ip,
+                port=port,
+                iface_type=iface_type,
+                templateid=templateid,
+                groupid=groupid,
+                snmp_community=snmp_community,
+            )
 
-                # 6. 导入到 Tognix
-                import_result = tog_client.configuration_import(xml_transformed)
-
-                # 7. 检查是否成功
-                if import_result:
-                    results.append({
-                        "hostid": hostid,
-                        "host": host_name,
-                        "status": "created",
-                        "template": src_tpl
-                    })
-                    created += 1
-                else:
-                    results.append({
-                        "hostid": hostid,
-                        "host": host_name,
-                        "status": "failed",
-                        "error": "configuration.import 返回失败"
-                    })
-                    failed += 1
-
-            except Exception as e:
-                results.append({"hostid": hostid, "host": host_name, "status": "failed", "error": str(e)})
+            if result["success"]:
+                results.append({
+                    "hostid": hostid,
+                    "host": host_name,
+                    "status": "created",
+                    "tognix_hostid": result["hostid"],
+                    "template": tog_tpl["tognix_name"]
+                })
+                created += 1
+            else:
+                results.append({
+                    "hostid": hostid,
+                    "host": host_name,
+                    "status": "failed",
+                    "error": result.get("error", "未知错误")
+                })
                 failed += 1
 
-        # 凭证迁移（独立 API）
+        # 凭证迁移（API）
         cred_results = []
         cred_created = 0
         if req.migrate_credentials:
@@ -393,10 +456,8 @@ def migrate_execute(req: MigrateExecuteRequest):
                     value = m["value"]
                     if "SNMP_COMMUNITY" in macro:
                         try:
-                            # 获取该主机的端口
-                            host_detail = zbx_client.get_host_detail(h["hostid"])
                             port = "161"
-                            for iface in host_detail.get("interfaces", []):
+                            for iface in h.get("interfaces", []):
                                 if iface.get("main") == "1" and iface.get("type") == "2":
                                     port = iface.get("port", "161")
                                     break
