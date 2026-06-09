@@ -16,7 +16,44 @@ Tognix-Move：Zabbix → Tognix 监控配置迁移工具
 
 ## 当前版本
 
-**v0.1.0** — 原型定稿，待新版 Phase 4 卡开发
+**v0.2.0** — Phase 5 完成，Phase 6 部署中
+
+---
+
+## 🔬 核心验证结论（2026-06-09 军师实测）
+
+### host.createhost 自动模板绑定
+
+**不需要维护模板映射表。** Tognix PHP 自动 SNMP 扫描 → 厂商/OS 识别 → 绑定对应模板：
+
+| 设备 | IP | 凭证 | 自动绑定模板 |
+|------|-----|------|------------|
+| H3C 交换机 | 30.2 | 102 (public) | 11 (Network Generic by SNMP) ✅ |
+| Linux | 31.35 | 114 (public@123) | 4 (Server Linux by SNMP) ✅ |
+| Windows | 31.26 | ? (zerops) | 6 (Server Windows by SNMP) 待验证 |
+
+### 凭证创建限制
+
+**API 创建的 SNMPv2 凭证不可用。** `credentials.create` 不存在。即使通过其他方式 API 创建，`encrypt_flag` 缺失、`has_password=false`，调 host.createhost 报"凭证错误"。
+
+**只有 Web UI 手动创建的凭证能正常工作**（`encrypt_flag=1, has_password=true`）。
+
+### 凭证与主机迁移解耦
+
+```
+Tognix-Move 职责：把主机迁过去。凭证匹配：尽力而为。
+
+① 从 Zabbix 提取 SNMP 凭证清单（Phase 5 Excel 导出）
+② 用户对照清单在 Tognix Web UI 创建对应凭证（可跳过）
+③ Tognix-Move 做 Zabbix 团体名 → Tognix 凭证 ID 智能匹配
+④ host.createhost 传匹配到的 credential ID
+   → 匹配成功：主机立即可用
+   → 无匹配：不带 credential 或空数组，主机骨架迁入，等用户手动绑
+```
+
+**迁移后状态分级**：
+- ✅ 凭证匹配 → 主机在线 + 模板绑定 + 数据采集正常
+- ⚠️ 无匹配 → 主机在线 + 模板绑定，但无 SNMP 凭证，需手动补充
 
 ---
 
