@@ -139,34 +139,39 @@ def export_credentials(
 
 class TognixConnectRequest(BaseModel):
     url: str
-    username: str
-    password: str
+    username: str = ""
+    password: str = ""
+    token: str = ""  # zops-token, optional
 
 
 @app.post("/api/tognix/connect")
 def tognix_connect(req: TognixConnectRequest):
     """Test Tognix target connection and return metadata"""
-    auth = TognixAuth(req.url)
-    try:
-        token = auth.login(req.username, req.password)
-        migrate = TognixMigrate(req.url, token)
+    # Prefer zops-token over username/password
+    if req.token:
+        token = req.token
+    else:
+        auth = TognixAuth(req.url)
+        try:
+            token = auth.login(req.username, req.password)
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
-        hosts = migrate.get_hosts()
-        groups = migrate.get_hostgroups()
-        creds = migrate.get_credentials()
+    migrate = TognixMigrate(req.url, token)
+    hosts = migrate.get_hosts()
+    groups = migrate.get_hostgroups()
+    creds = migrate.get_credentials()
 
-        return {
-            "success": True,
-            "token": token,
-            "hosts": hosts,
-            "host_groups": groups,
-            "credentials": creds,
-            "total_hosts": len(hosts),
-            "total_groups": len(groups),
-            "total_credentials": len(creds),
-        }
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    return {
+        "success": True,
+        "token": token,
+        "hosts": hosts,
+        "host_groups": groups,
+        "credentials": creds,
+        "total_hosts": len(hosts),
+        "total_groups": len(groups),
+        "total_credentials": len(creds),
+    }
 
 
 # === Migration (Phase 4 API) ===
@@ -298,8 +303,9 @@ def migrate_preview(req: MigratePreviewRequest):
 
 class MigrateExecuteRequest(BaseModel):
     tognix_url: str
-    tognix_username: str
-    tognix_password: str
+    tognix_username: str = ""
+    tognix_password: str = ""
+    tognix_token: str = ""  # zops-token, prefer over username/password
     selected_hosts: List[Dict[str, Any]]
     migrate_credentials: bool = True
 
@@ -307,12 +313,17 @@ class MigrateExecuteRequest(BaseModel):
 @app.post("/api/migrate/execute")
 def migrate_execute(req: MigrateExecuteRequest):
     """Execute migration via host.createhost API"""
-    # Connect Tognix
-    tog_auth = TognixAuth(req.tognix_url)
-    try:
-        token = tog_auth.login(req.tognix_username, req.tognix_password)
-    except Exception as e:
-        return {"success": False, "error": f"Tognix login failed: {e}"}
+    # Connect Tognix - prefer zops-token over username/password
+    if req.tognix_token:
+        # 直接使用 zops-token（浏览器登录产生的 token 可以调用 host.createhost）
+        token = req.tognix_token
+    else:
+        # fallback 到 user.login（但这个 token 只能读不能写）
+        tog_auth = TognixAuth(req.tognix_url)
+        try:
+            token = tog_auth.login(req.tognix_username, req.tognix_password)
+        except Exception as e:
+            return {"success": False, "error": f"Tognix login failed: {e}"}
 
     migrate = TognixMigrate(req.tognix_url, token)
 
