@@ -327,7 +327,16 @@ select.form-input option {
 .cred-chip {
   display: flex; align-items: center; gap: 6px;
   font-size: 12px; color: var(--text-secondary);
-  padding: 6px 10px; background: rgba(255,255,255,0.... [truncated]
+  padding: 6px 10px; background: rgba(255,255,255,0.03);
+  border-radius: var(--radius-sm);
+}
+.cred-chip-icon { font-size: 14px; }
+.cred-chip-count {
+  background: var(--bg-elevated); padding: 2px 6px;
+  border-radius: 99px; font-size: 10px; color: var(--text-muted);
+}
+
+/* Toast */
 .toast {
   position: fixed; top: 20px; right: 20px; z-index: 200;
   padding: 12px 20px; border-radius: var(--radius-md);
@@ -350,7 +359,7 @@ select.form-input option {
         <div class="logo-sub">Zabbix → Tognix 迁移工具</div>
       </div>
     </div>
-    <div class="header-badge">v0.1.0 Demo</div>
+    <div class="header-badge">v0.2.0</div>
   </div>
 </div>
 
@@ -486,19 +495,11 @@ select.form-input option {
             <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:4px;">📋 Zabbix 凭证清单</div>
             <div style="font-size:12px;color:var(--text-muted);">迁移前请先导出 Zabbix 凭证存档。Tognix 不存储明文密码。</div>
           </div>
-          <button class="btn btn-download" onclick="downloadCredentialsExcel()" style="white-space:nowrap;">
+          <button class="btn btn-secondary" onclick="downloadCredentialsExcel()" style="white-space:nowrap;">
             📥 导出凭证 Excel (.xlsx)
           </button>
         </div>
-        <div class="cred-grid" style="margin-top:10px;">
-          <div class="cred-chip"><span class="cred-chip-icon">🔑</span> SNMPv2 Community<span class="cred-chip-count">2</span></div>
-          <div class="cred-chip"><span class="cred-chip-icon">🔒</span> SNMPv3<span class="cred-chip-count">1</span></div>
-          <div class="cred-chip"><span class="cred-chip-icon">🖥</span> VMware<span class="cred-chip-count">1</span></div>
-          <div class="cred-chip"><span class="cred-chip-icon">🔗</span> SSH<span class="cred-chip-count">1</span></div>
-          <div class="cred-chip"><span class="cred-chip-icon">☁️</span> HTTP/API<span class="cred-chip-count">2</span></div>
-          <div class="cred-chip"><span class="cred-chip-icon">🗄</span> JMX<span class="cred-chip-count">1</span></div>
-        </div>
-        <span id="cred-download-done" style="display:none;font-size:12px;color:var(--success);margin-top:8px;display:none;">✅ 已下载</span>
+        <span id="cred-download-done" style="display:none;font-size:12px;color:var(--success);margin-top:8px;">✅ 已下载</span>
       </div>
 
       <!-- Preview Table -->
@@ -514,7 +515,7 @@ select.form-input option {
       <div class="toggle-row" style="margin-top:16px;margin-bottom:16px;">
         <div class="toggle-info">
           <span class="toggle-label">🔐 同时迁移 SNMP 凭证到 Tognix</span>
-          <span class="toggle-desc" id="cred-desc">检测到 SNMPv2 凭证，开启后将自动创建到 Tognix 凭证库</span>
+          <span class="toggle-desc" id="cred-desc">凭证将在迁移完成后自动同步到 Tognix 凭证库。</span>
         </div>
         <label class="toggle-switch">
           <input type="checkbox" id="cred-toggle" checked onchange="onCredToggle()">
@@ -528,7 +529,7 @@ select.form-input option {
             <input type="checkbox" checked onchange="toggleSelectAll(this)" id="select-all-cb" style="accent-color:var(--brand);width:14px;height:14px;">
             全选 / 取消
           </label>
-          <span style="font-size:11px;color:var(--text-muted);" id="selected-count">已选 1 台</span>
+          <span style="font-size:11px;color:var(--text-muted);" id="selected-count">已选 0 台</span>
         </div>
         <button class="btn btn-ghost" onclick="goStep2()">← 上一步</button>
         <button class="btn btn-primary" onclick="startMigration()" id="btn-start">
@@ -546,7 +547,7 @@ select.form-input option {
         </div>
         <div class="progress-section">
           <div class="progress-header">
-            <span class="progress-title" id="progress-title">正在迁移: H3C-Switch-A</span>
+            <span class="progress-title" id="progress-title">正在迁移</span>
             <span class="progress-pct" id="progress-pct">0%</span>
           </div>
           <div class="progress-bar-outer">
@@ -575,6 +576,9 @@ select.form-input option {
 let currentStep = 1;
 let srcOk = false, dstOk = false;
 let migrating = false;
+let previewHosts = [];  // 从 API 获取的预览数据
+let srcConnectionData = {};  // 源连接信息
+let dstConnectionData = {};  // 目标连接信息
 
 function togglePwd(inputId, btn) {
   const input = document.getElementById(inputId);
@@ -633,20 +637,6 @@ function updateSelectedCount() {
   if (btn && !migrating) btn.disabled = selected === 0;
 }
 
-// Preview data
-const previewData = [
-  { host: 'H3C-Switch-A', ip: '192.168.30.2', type: 'SNMP', dstTpl: '网络设备模板', supported: true },
-  { host: 'H3C-Switch-B', ip: '192.168.30.3', type: 'SNMP', dstTpl: '网络设备模板', supported: true },
-  { host: 'FW-Main', ip: '192.168.30.1', type: 'SNMP', dstTpl: '网络设备模板', supported: true },
-  { host: 'Backup-NAS', ip: '192.168.30.200', type: 'SNMP', dstTpl: '网络设备模板', supported: true },
-  { host: 'Zabbix server', ip: '127.0.0.1', type: 'Agent', dstTpl: '—', supported: false, note: 'Agent 暂不支持' },
-  { host: 'Dev-02', ip: '192.168.31.24', type: 'Agent', dstTpl: '—', supported: false, note: 'Agent 暂不支持' },
-  { host: 'WebServer-01', ip: '192.168.30.100', type: 'Agent', dstTpl: '—', supported: false, note: 'Agent 暂不支持' },
-  { host: 'DBServer-01', ip: '192.168.30.110', type: 'Agent', dstTpl: '—', supported: false, note: 'Agent 暂不支持' },
-  { host: 'ESXi-A', ip: '192.168.30.71', type: 'Agent', dstTpl: '—', supported: false, note: 'Agent 暂不支持' },
-  { host: 'Gud-VC02', ip: '192.168.30.14', type: 'Agent', dstTpl: '—', supported: false, note: 'Agent 暂不支持' },
-];
-
 function showToast(msg, type) {
   const t = document.createElement('div');
   t.className = 'toast ' + type;
@@ -655,42 +645,103 @@ function showToast(msg, type) {
   setTimeout(() => t.remove(), 3000);
 }
 
-function testSource() {
+// === 真实 API 调用 ===
+
+async function testSource() {
   const btn = document.getElementById('btn-test-src');
   const status = document.getElementById('src-status');
   btn.classList.add('loading');
   btn.innerHTML = '<span class="spinner"></span> 测试中...';
   status.innerHTML = '';
 
-  setTimeout(() => {
-    srcOk = true;
+  const url = document.getElementById('src-url').value;
+  const user = document.getElementById('src-user').value;
+  const pass = document.getElementById('src-pass').value;
+
+  try {
+    const resp = await fetch('/api/zabbix/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, username: user, password: pass })
+    });
+    const data = await resp.json();
+
+    if (data.success) {
+      srcOk = true;
+      srcConnectionData = data;
+      btn.classList.remove('loading');
+      btn.innerHTML = '⚡ 测试连接';
+      btn.style.color = 'var(--success)';
+      btn.style.borderColor = 'var(--success)';
+      const hostCount = data.hosts_count || data.total_hosts || data.host_count || 0;
+      const tplCount = data.templates_count || data.total_templates || 0;
+      status.innerHTML = `<span class="status-dot ok"></span><span class="status-msg ok">连接成功 — ${data.version || 'Zabbix'}, ${hostCount} 台主机, ${tplCount} 个模板</span>`;
+      document.getElementById('btn-next1').disabled = false;
+      showToast('源 Zabbix 连接成功', 'success');
+    } else {
+      btn.classList.remove('loading');
+      btn.innerHTML = '⚡ 测试连接';
+      btn.style.color = 'var(--error)';
+      btn.style.borderColor = 'var(--error)';
+      status.innerHTML = `<span class="status-dot error"></span><span class="status-msg error">连接失败 — ${data.error || '请检查地址和账号密码'}</span>`;
+      showToast('连接失败', 'error');
+    }
+  } catch (e) {
     btn.classList.remove('loading');
     btn.innerHTML = '⚡ 测试连接';
-    btn.style.color = 'var(--success)';
-    btn.style.borderColor = 'var(--success)';
-    status.innerHTML = '<span class="status-dot ok"></span><span class="status-msg ok">连接成功 — Zabbix 6.0.25, 32 台主机, 98 个模板</span>';
-    document.getElementById('btn-next1').disabled = false;
-    showToast('源 Zabbix 连接成功', 'success');
-  }, 1500);
+    btn.style.color = 'var(--error)';
+    btn.style.borderColor = 'var(--error)';
+    status.innerHTML = `<span class="status-dot error"></span><span class="status-msg error">请求失败 — ${e.message}</span>`;
+    showToast('请求失败', 'error');
+  }
 }
 
-function testTarget() {
+async function testTarget() {
   const btn = document.getElementById('btn-test-dst');
   const status = document.getElementById('dst-status');
   btn.classList.add('loading');
   btn.innerHTML = '<span class="spinner"></span> 测试中...';
   status.innerHTML = '';
 
-  setTimeout(() => {
-    dstOk = true;
+  const url = document.getElementById('dst-url').value;
+  const user = document.getElementById('dst-user').value;
+  const pass = document.getElementById('dst-pass').value;
+
+  try {
+    const resp = await fetch('/api/tognix/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, username: user, password: pass })
+    });
+    const data = await resp.json();
+
+    if (data.success) {
+      dstOk = true;
+      dstConnectionData = data;
+      btn.classList.remove('loading');
+      btn.innerHTML = '⚡ 测试连接';
+      btn.style.color = 'var(--success)';
+      btn.style.borderColor = 'var(--success)';
+      const hostCount = data.total_hosts || data.hosts?.length || 0;
+      status.innerHTML = `<span class="status-dot ok"></span><span class="status-msg ok">连接成功 — Tognix 平台已就绪, ${hostCount} 台主机</span>`;
+      document.getElementById('btn-next2').disabled = false;
+      showToast('目标 Tognix 连接成功', 'success');
+    } else {
+      btn.classList.remove('loading');
+      btn.innerHTML = '⚡ 测试连接';
+      btn.style.color = 'var(--error)';
+      btn.style.borderColor = 'var(--error)';
+      status.innerHTML = `<span class="status-dot error"></span><span class="status-msg error">连接失败 — ${data.error || '请检查地址和账号密码'}</span>`;
+      showToast('连接失败', 'error');
+    }
+  } catch (e) {
     btn.classList.remove('loading');
     btn.innerHTML = '⚡ 测试连接';
-    btn.style.color = 'var(--success)';
-    btn.style.borderColor = 'var(--success)';
-    status.innerHTML = '<span class="status-dot ok"></span><span class="status-msg ok">连接成功 — Tognix 平台已就绪</span>';
-    document.getElementById('btn-next2').disabled = false;
-    showToast('目标 Tognix 连接成功', 'success');
-  }, 1500);
+    btn.style.color = 'var(--error)';
+    btn.style.borderColor = 'var(--error)';
+    status.innerHTML = `<span class="status-dot error"></span><span class="status-msg error">请求失败 — ${e.message}</span>`;
+    showToast('请求失败', 'error');
+  }
 }
 
 function setStepUI(step) {
@@ -713,33 +764,79 @@ function setStepUI(step) {
 
 function goStep1() { setStepUI(1); }
 function goStep2() { setStepUI(2); }
-function goStep3() {
+async function goStep3() {
   setStepUI(3);
-  renderPreview();
+  await loadPreview();
+}
+
+async function loadPreview() {
+  const tbody = document.getElementById('preview-body');
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">正在加载预览数据...</td></tr>';
+
+  const zabbixUrl = document.getElementById('src-url').value;
+  const zabbixUser = document.getElementById('src-user').value;
+  const zabbixPass = document.getElementById('src-pass').value;
+  const tognixUrl = document.getElementById('dst-url').value;
+  const tognixUser = document.getElementById('dst-user').value;
+  const tognixPass = document.getElementById('dst-pass').value;
+
+  try {
+    const resp = await fetch('/api/migrate/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        zabbix_url: zabbixUrl,
+        zabbix_username: zabbixUser,
+        zabbix_password: zabbixPass,
+        tognix_url: tognixUrl,
+        tognix_username: tognixUser,
+        tognix_password: tognixPass
+      })
+    });
+    const data = await resp.json();
+
+    if (data.success) {
+      previewHosts = data.hosts || [];
+      renderPreview();
+      showToast('预览数据加载成功', 'success');
+    } else {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--error);">加载失败: ${data.error}</td></tr>`;
+      showToast('预览加载失败', 'error');
+    }
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--error);">请求失败: ${e.message}</td></tr>`;
+    showToast('请求失败', 'error');
+  }
 }
 
 function renderPreview() {
   const tbody = document.getElementById('preview-body');
-  tbody.innerHTML = previewData.map((p,i) => {
-    if (p.supported) {
+  if (!previewHosts.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">无主机数据</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = previewHosts.map((h, i) => {
+    const isSupported = h.supported !== false && h.type === 'snmp';
+    if (isSupported) {
       return `
     <tr>
       <td><input type="checkbox" class="host-select-cb" checked onchange="updateSelectedCount()" data-idx="${i}" style="accent-color:var(--brand);width:14px;height:14px;"></td>
-      <td style="color:var(--text-primary);font-weight:500;">${p.host}</td>
-      <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">${p.ip}</td>
+      <td style="color:var(--text-primary);font-weight:500;">${h.name || h.host}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">${h.ip}</td>
       <td><span class="type-badge snmp">SNMP</span></td>
-      <td style="font-size:12px;color:var(--text-primary);">${p.dstTpl}</td>
+      <td style="font-size:12px;color:var(--text-primary);">${h.target_groupid || '网络设备'}</td>
       <td><span class="mapping-badge matched">✓ 可迁移</span></td>
     </tr>`;
     } else {
       return `
     <tr style="opacity:0.45;">
       <td></td>
-      <td style="color:var(--text-muted);">${p.host}</td>
-      <td style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-muted);">${p.ip}</td>
-      <td><span class="type-badge agent">Agent</span></td>
-      <td style="font-size:12px;color:var(--text-muted);">${p.dstTpl}</td>
-      <td><span class="mapping-badge unmatched">${p.note}</span></td>
+      <td style="color:var(--text-muted);">${h.name || h.host}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-muted);">${h.ip}</td>
+      <td><span class="type-badge agent">${h.type || 'Agent'}</span></td>
+      <td style="font-size:12px;color:var(--text-muted);">—</td>
+      <td><span class="mapping-badge unmatched">${h.support_note || '当前版本不支持'}</span></td>
     </tr>`;
     }
   }).join('');
@@ -757,7 +854,7 @@ function addLog(msg, type) {
   container.scrollTop = container.scrollHeight;
 }
 
-function startMigration() {
+async function startMigration() {
   if (migrating) return;
   migrating = true;
 
@@ -766,159 +863,121 @@ function startMigration() {
   document.getElementById('progress-section').classList.remove('hidden');
   document.getElementById('progress-section').classList.add('fade-enter');
 
-  const hosts = previewData.filter((p,i) => {
+  // 收集选中的主机
+  const selectedHosts = [];
+  previewHosts.forEach((h, i) => {
     const cb = document.querySelector(`.host-select-cb[data-idx="${i}"]`);
-    return cb && cb.checked;
+    if (cb && cb.checked && h.type === 'snmp') {
+      selectedHosts.push({
+        hostid: h.hostid,
+        name: h.name || h.host,
+        ip: h.ip,
+        type: h.type,
+        credentialid: h.target_credentialid || '102',
+        groupid: h.target_groupid || '1'
+      });
+    }
   });
-  const total = hosts.length;
 
+  const total = selectedHosts.length;
   document.getElementById('stat-total').textContent = total;
   document.getElementById('stat-pending').textContent = total;
 
-  addLog(`开始迁移 — 共 ${total} 台主机 (${previewData.length - total} 台已取消选择)`, 'info');
-  addLog('模板映射策略: Tognix 原生模板', 'info');
+  addLog(`开始迁移 — 共 ${total} 台 SNMP 主机`, 'info');
 
-  // Credential migration log
-  const credOn = document.getElementById('cred-toggle').checked;
-  if (credOn) {
-    addLog('🔐 凭证迁移已启用 — 将同步创建到 Tognix 凭证库', 'info');
-  } else {
-    addLog('⚠ 凭证迁移已关闭 — SNMP 团体名等需手动配置', 'warning');
+  if (total === 0) {
+    addLog('未选择可迁移主机', 'warning');
+    migrating = false;
+    document.getElementById('btn-start').disabled = false;
+    document.getElementById('btn-start').innerHTML = '🚀 开始迁移';
+    return;
   }
 
-  let done = 0, fail = 0, idx = 0;
+  const tognixUrl = document.getElementById('dst-url').value;
+  const tognixUser = document.getElementById('dst-user').value;
+  const tognixPass = document.getElementById('dst-pass').value;
 
-  function migrateNext() {
-    if (idx >= hosts.length) {
-      // Complete
-      setTimeout(() => {
-        // Simulate credential migration
-        const credOn = document.getElementById('cred-toggle').checked;
-        if (credOn) {
-          addLog('🔐 凭证迁移: public (SNMPv2) → Tognix 凭证 #103', 'success');
-          addLog('🔐 凭证迁移: snmpv3-admin (SNMPv3) → Tognix 凭证 #104', 'success');
-          addLog('🔐 凭证迁移: VC (VMware) → Tognix 凭证 #105 (复用已有)', 'success');
-          addLog('🔐 凭证迁移: linux-ssh-key (SSH) → Tognix 凭证 #106', 'success');
-          addLog('📋 共迁移 5 个凭证到 Tognix，1 个 SNMPv2 (internal-ro) 因取消勾选主机而跳过', 'info');
+  try {
+    const resp = await fetch('/api/migrate/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tognix_url: tognixUrl,
+        tognix_username: tognixUser,
+        tognix_password: tognixPass,
+        selected_hosts: selectedHosts
+      })
+    });
+    const data = await resp.json();
+
+    if (data.success) {
+      const results = data.results || [];
+      let done = 0, fail = 0, skipped = 0;
+
+      results.forEach(r => {
+        if (r.success && !r.skipped) {
+          done++;
+          addLog(`✓ ${r.name} (${r.ip}) → Tognix hostid=${r.tognix_hostid}`, 'success');
+        } else if (r.skipped) {
+          skipped++;
+          addLog(`⊘ ${r.name} — ${r.reason}`, 'warning');
+        } else {
+          fail++;
+          addLog(`✗ ${r.name} (${r.ip}) — ${r.error}`, 'error');
         }
+      });
 
+      // 更新统计
+      document.getElementById('stat-done').textContent = done;
+      document.getElementById('stat-fail').textContent = fail;
+      document.getElementById('stat-pending').textContent = 0;
+      document.getElementById('progress-pct').textContent = '100%';
+      document.getElementById('progress-bar').style.width = '100%';
+
+      // 显示完成
+      setTimeout(() => {
         document.getElementById('progress-section').classList.add('hidden');
         document.getElementById('completion-section').classList.remove('hidden');
         document.getElementById('completion-section').classList.add('fade-enter');
         document.getElementById('completion-desc').textContent =
-          `成功迁移 ${done} 台主机，${fail} 台失败。共 ${previewData.length} 台主机，其中 ${previewData.length - done - fail} 台未选择迁移。`;
-        setStepUI(3);
+          `成功迁移 ${done} 台主机，${fail} 台失败，${skipped} 台跳过。`;
         showToast('迁移完成！', 'success');
       }, 500);
-      return;
+    } else {
+      addLog(`迁移失败: ${data.error}`, 'error');
+      showToast('迁移失败', 'error');
     }
-
-    const host = hosts[idx];
-    document.getElementById('progress-title').textContent = `正在迁移: ${host.host}`;
-
-    // Simulate occasional failure
-    const willFail = false; // idx === 7; // demo: no failures
-
-    const delay = 400 + Math.random() * 600;
-    setTimeout(() => {
-      if (willFail) {
-        fail++;
-        addLog(`✗ ${host.host} (${host.ip}) — 迁移失败: SNMP 超时`, 'error');
-      } else {
-        done++;
-        addLog(`✓ ${host.host} (${host.ip}) → ${host.dstTpl}`, 'success');
-      }
-
-      const pct = Math.round((done+fail) / hosts.length * 100);
-      document.getElementById('progress-pct').textContent = pct + '%';
-      document.getElementById('progress-bar').style.width = pct + '%';
-      document.getElementById('stat-done').textContent = done;
-      document.getElementById('stat-fail').textContent = fail;
-      document.getElementById('stat-pending').textContent = hosts.length - done - fail;
-
-      if (pct > 50 && pct < 80) {
-        addLog(`已迁移 ${done} 台，进度 ${pct}%`, 'info');
-      }
-      if (pct >= 90) {
-        addLog(`即将完成 — ${hosts.length - done - fail} 台剩余`, 'info');
-      }
-
-      idx++;
-      migrateNext();
-    }, delay);
+  } catch (e) {
+    addLog(`请求失败: ${e.message}`, 'error');
+    showToast('请求失败', 'error');
   }
 
-  migrateNext();
+  migrating = false;
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-start').innerHTML = '🚀 开始迁移';
 }
-
-// === Credential Management ===
-const credentialData = [
-  { name: 'public', type: 'SNMPv2', protocol: 'SNMPv2', community: 'public', port: 161, hosts: 'H3C-Switch-A, H3C-Switch-B', migrated: '是' },
-  { name: 'internal-ro', type: 'SNMPv2', protocol: 'SNMPv2', community: '******', port: 161, hosts: 'FW-Main, Backup-NAS', migrated: '否（取消勾选）' },
-  { name: 'snmpv3-admin', type: 'SNMPv3', protocol: 'SNMPv3', user: 'snmpadmin', authProto: 'SHA256', privProto: 'AES128', port: 161, hosts: 'Core-Router-01', migrated: '是' },
-  { name: 'VC', type: 'VMware', protocol: 'VMware', user: 'administrator@vsphere.local', port: 443, hosts: 'Gud-VC02, ESXi-A~D', migrated: '是' },
-  { name: 'linux-ssh-key', type: 'SSH', protocol: 'SSH', user: 'root', authType: '私钥', port: 22, hosts: 'Dev-02, WebServer-01, WebServer-02', migrated: '是' },
-  { name: 'nginx-http-token', type: 'HTTP/API', protocol: 'HTTP', token: 'eyJhbG...***', hosts: 'WebServer-01, WebServer-02', migrated: '不适用' },
-  { name: 'tomcat-jmx', type: 'JMX', protocol: 'JMX', user: 'monitor', port: 12345, hosts: 'AppServer-01', migrated: '不适用' },
-  { name: 'prometheus-read', type: 'HTTP/API', protocol: 'HTTP', user: 'reader', hosts: 'Prometheus-Server', migrated: '不适用' },
-];
 
 function onCredToggle() {
   const checked = document.getElementById('cred-toggle').checked;
   const desc = document.getElementById('cred-desc');
   if (checked) {
-    desc.textContent = '检测到 5 个凭证（2 SNMPv2 · 1 SNMPv3 · 1 VMware · 1 SSH）。开启后将自动创建到 Tognix 凭证库。';
+    desc.textContent = '凭证将在迁移完成后自动同步到 Tognix 凭证库。';
   } else {
     desc.textContent = '凭证迁移已关闭。主机监控项仍会迁移，但 SNMP 团体名等需在 Tognix 中手动配置。';
   }
 }
 
 function downloadCredentialsExcel() {
-  const credMigrated = document.getElementById('cred-toggle').checked;
+  const zabbixUrl = document.getElementById('src-url').value;
+  const zabbixUser = document.getElementById('src-user').value;
+  const zabbixPass = document.getElementById('src-pass').value;
 
-  // Build sheet data
-  const headers = ['凭证名称', '类型', '协议', '用户名', '认证方式', '端口', '关联主机', '迁移状态'];
-  const rows = credentialData.map(c => [
-    c.name,
-    c.type,
-    c.protocol,
-    c.user || c.community || c.token || '—',
-    c.authType || c.authProto || (c.type === 'SNMPv2' ? 'Community String' : '—'),
-    c.port || '—',
-    c.hosts,
-    c.migrated
-  ]);
+  const url = `/api/credentials/export?zabbix_url=${encodeURIComponent(zabbixUrl)}&zabbix_username=${encodeURIComponent(zabbixUser)}&zabbix_password=${encodeURIComponent(zabbixPass)}`;
 
-  const sheetData = [headers, ...rows];
-  const ws = XLSX.utils.aoa_to_sheet(sheetData);
-
-  // Column widths
-  ws['!cols'] = [
-    { wch: 16 }, { wch: 12 }, { wch: 10 }, { wch: 28 },
-    { wch: 18 }, { wch: 8 }, { wch: 30 }, { wch: 14 }
-  ];
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Zabbix凭证');
-
-  // Add summary sheet
-  const summaryData = [
-    ['Zabbix 凭证迁移报告'],
-    [''],
-    ['导出时间', new Date().toLocaleString('zh-CN')],
-    ['源平台', 'Zabbix 6.0.25'],
-    ['目标平台', 'Tognix v6.4.3'],
-    ['是否迁移凭证', credMigrated ? '是' : '否'],
-    [''],
-    ['凭证统计'],
-    ['类型', '数量'],
-    ...Object.entries(credentialData.reduce((acc, c) => { acc[c.type] = (acc[c.type] || 0) + 1; return acc; }, {})).map(([k, v]) => [k, v])
-  ];
-  const ws2 = XLSX.utils.aoa_to_sheet(summaryData);
-  ws2['!cols'] = [{ wch: 20 }, { wch: 15 }];
-  XLSX.utils.book_append_sheet(wb, ws2, '迁移报告');
-
-  XLSX.writeFile(wb, `Zabbix凭证导出_${new Date().toISOString().slice(0,10)}.xlsx`);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'zabbix_credentials.xlsx';
+  a.click();
 
   document.getElementById('cred-download-done').style.display = 'inline';
   showToast('凭证 Excel 已下载', 'success');
