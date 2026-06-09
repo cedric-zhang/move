@@ -239,6 +239,12 @@ select.form-input option {
 }
 .mapping-badge.matched { background: rgba(39,166,68,0.15); color: var(--success); }
 .mapping-badge.unmatched { background: rgba(245,158,11,0.15); color: var(--warning); }
+.type-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 99px;
+  font-size: 11px; font-weight: 600;
+}
+.type-badge.snmp { background: rgba(94,106,210,0.15); color: var(--brand-bright); }
+.type-badge.agent { background: rgba(138,143,152,0.15); color: var(--text-tertiary); }
 
 /* Completion */
 .completion {
@@ -421,11 +427,6 @@ select.form-input option {
         <div class="card-desc">连接 Tognix 平台。迁移将通过远程 API 自动完成主机创建、SNMP 扫描、模板匹配。</div>
       </div>
 
-      <!-- SNMP Only Notice -->
-      <div class="notice-box" style="background: linear-gradient(135deg, #ff6b35 0%, #f7931a 100%); border-radius: 8px; padding: 12px 16px; margin: 12px 0;">
-        <span style="color: white; font-weight: 500;">⚠️ 当前版本仅支持 SNMP 网络设备迁移</span>
-      </div>
-
       <!-- API Mode -->
       <div id="dst-api-fields">
         <div class="form-grid">
@@ -464,29 +465,57 @@ select.form-input option {
     <div class="card fade-enter hidden" id="step3-panel">
       <div class="card-header">
         <div class="card-title">迁移预览与执行</div>
-        <div class="card-desc">以下是将从源 Zabbix 迁移到 Tognix 的监控对象预览。模板已自动映射为 Tognix 等价模板。</div>
-        <div style="margin-top:12px;padding:10px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:6px;font-size:12px;color:var(--warning);display:flex;align-items:center;gap:8px;">
-          <span style="font-size:16px;">⚠️</span>
-          <span><strong>注意：</strong>迁移不包含监控历史数据，仅迁移主机。《Tognix 将从迁移完成时刻开始采集新数据》</span>
+        <div class="card-desc">以下是将从源 Zabbix 迁移到 Tognix 的监控对象预览。当前版本仅支持 SNMP 网络设备迁移。</div>
+        <!-- SNMP-only notice -->
+        <div style="margin-top:12px;padding:12px 16px;background:rgba(94,106,210,0.08);border:1px solid rgba(94,106,210,0.2);border-radius:8px;font-size:13px;color:var(--brand-bright);display:flex;align-items:flex-start;gap:10px;">
+          <span style="font-size:18px;flex-shrink:0;">🔌</span>
+          <div>
+            <strong style="color:var(--text-primary);">SNMP 专版</strong>
+            <span style="color:var(--text-secondary);"> — 自动发现交换机/路由器/防火墙，绑定网络设备模板。Agent 监控暂不支持，将在后续版本中开放。</span>
+          </div>
         </div>
+        <div style="margin-top:8px;padding:10px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:6px;font-size:12px;color:var(--warning);display:flex;align-items:center;gap:8px;">
+          <span style="font-size:14px;">⚠️</span>
+          <span>迁移不包含监控历史数据，仅迁移主机配置。Tognix 将从迁移完成时刻开始采集新数据。</span>
+        </div>
+      </div>
+
+      <!-- Credential Export (before migration) -->
+      <div class="cred-export-block" style="margin-bottom:20px;padding:16px 20px;background:var(--bg-surface);border:1px solid var(--border-standard);border-radius:var(--radius-lg);">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div>
+            <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:4px;">📋 Zabbix 凭证清单</div>
+            <div style="font-size:12px;color:var(--text-muted);">迁移前请先导出 Zabbix 凭证存档。Tognix 不存储明文密码。</div>
+          </div>
+          <button class="btn btn-download" onclick="downloadCredentialsExcel()" style="white-space:nowrap;">
+            📥 导出凭证 Excel (.xlsx)
+          </button>
+        </div>
+        <div class="cred-grid" style="margin-top:10px;">
+          <div class="cred-chip"><span class="cred-chip-icon">🔑</span> SNMPv2 Community<span class="cred-chip-count">2</span></div>
+          <div class="cred-chip"><span class="cred-chip-icon">🔒</span> SNMPv3<span class="cred-chip-count">1</span></div>
+          <div class="cred-chip"><span class="cred-chip-icon">🖥</span> VMware<span class="cred-chip-count">1</span></div>
+          <div class="cred-chip"><span class="cred-chip-icon">🔗</span> SSH<span class="cred-chip-count">1</span></div>
+          <div class="cred-chip"><span class="cred-chip-icon">☁️</span> HTTP/API<span class="cred-chip-count">2</span></div>
+          <div class="cred-chip"><span class="cred-chip-icon">🗄</span> JMX<span class="cred-chip-count">1</span></div>
+        </div>
+        <span id="cred-download-done" style="display:none;font-size:12px;color:var(--success);margin-top:8px;display:none;">✅ 已下载</span>
       </div>
 
       <!-- Preview Table -->
       <table class="mapping-table">
         <thead>
-          <tr><th style="width:30px;"><input type="checkbox" checked onchange="toggleSelectAll(this)" id="select-all-cb2" style="accent-color:var(--brand);width:14px;height:14px;"></th><th>源主机</th><th>IP</th><th>源模板</th><th>→ Tognix 模板</th><th>状态</th></tr>
+          <tr><th style="width:30px;"><input type="checkbox" checked onchange="toggleSelectAll(this)" id="select-all-cb2" style="accent-color:var(--brand);width:14px;height:14px;"></th><th>源主机</th><th>IP</th><th>类型</th><th>→ Tognix 模板</th><th>状态</th></tr>
         </thead>
         <tbody id="preview-body">
         </tbody>
       </table>
 
-      <div class="form-actions" style="justify-content: space-between; align-items: center;">
-
-      <!-- Credential Migration Option -->
-      <div class="toggle-row" style="margin-bottom: 0;">
+      <!-- Credential Migration Toggle -->
+      <div class="toggle-row" style="margin-top:16px;margin-bottom:16px;">
         <div class="toggle-info">
-          <span class="toggle-label">🔐 同时迁移 SNMP 及其他凭证</span>
-          <span class="toggle-desc" id="cred-desc">检测到 5 个凭证（2 SNMPv2 · 1 SNMPv3 · 1 VMware · 1 SSH）。开启后将自动创建到 Tognix 凭证库。</span>
+          <span class="toggle-label">🔐 同时迁移 SNMP 凭证到 Tognix</span>
+          <span class="toggle-desc" id="cred-desc">检测到 SNMPv2 凭证，开启后将自动创建到 Tognix 凭证库</span>
         </div>
         <label class="toggle-switch">
           <input type="checkbox" id="cred-toggle" checked onchange="onCredToggle()">
@@ -500,7 +529,7 @@ select.form-input option {
             <input type="checkbox" checked onchange="toggleSelectAll(this)" id="select-all-cb" style="accent-color:var(--brand);width:14px;height:14px;">
             全选 / 取消
           </label>
-          <span style="font-size:11px;color:var(--text-muted);" id="selected-count">已选 15 台</span>
+          <span style="font-size:11px;color:var(--text-muted);" id="selected-count">已选 1 台</span>
         </div>
         <button class="btn btn-ghost" onclick="goStep2()">← 上一步</button>
         <button class="btn btn-primary" onclick="startMigration()" id="btn-start">
@@ -534,30 +563,7 @@ select.form-input option {
       <div id="completion-section" class="hidden completion">
         <div class="completion-icon">✅</div>
         <div class="completion-title">迁移完成</div>
-        <div class="completion-desc" id="completion-desc">成功迁移 32 台主机到 Tognix 平台。请登录 Tognix 确认。</div>
-
-        <!-- Credential Export -->
-        <div id="cred-export-section" class="cred-summary" style="text-align:left; max-width: 480px; margin: 0 auto 20px;">
-          <div class="cred-summary-title">📋 Zabbix 凭证导出</div>
-          <div class="cred-grid" style="margin-bottom: 14px;">
-            <div class="cred-chip"><span class="cred-chip-icon">🔑</span> SNMPv2 Community<span class="cred-chip-count">2</span></div>
-            <div class="cred-chip"><span class="cred-chip-icon">🔒</span> SNMPv3<span class="cred-chip-count">1</span></div>
-            <div class="cred-chip"><span class="cred-chip-icon">🖥</span> VMware<span class="cred-chip-count">1</span></div>
-            <div class="cred-chip"><span class="cred-chip-icon">🔗</span> SSH<span class="cred-chip-count">1</span></div>
-            <div class="cred-chip"><span class="cred-chip-icon">☁️</span> HTTP/API<span class="cred-chip-count">2</span></div>
-            <div class="cred-chip"><span class="cred-chip-icon">🗄</span> JMX<span class="cred-chip-count">1</span></div>
-          </div>
-          <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">
-            以下凭证已从源 Zabbix 提取，建议下载 Excel 存档备查。Tognix 不存储明文密码，原始凭证仅在此文件中。
-          </p>
-          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-            <button class="btn btn-download" onclick="downloadCredentialsExcel()">
-              📥 下载凭证 Excel (.xlsx)
-            </button>
-            <span id="cred-download-done" style="display:none;font-size:12px;color:var(--success);">✅ 已下载</span>
-          </div>
-        </div>
-
+        <div class="completion-desc" id="completion-desc">成功迁移到 Tognix 平台。请登录 Tognix 确认监控数据。</div>
         <a href="https://192.168.31.128" target="_blank" class="btn btn-primary">打开 Tognix 平台 →</a>
       </div>
     </div>
@@ -630,21 +636,16 @@ function updateSelectedCount() {
 
 // Preview data
 const previewData = [
-  { host: 'H3C-Switch-A', ip: '192.168.30.2', srcTpl: 'Network Generic Device by SNMP', dstTpl: 'Network Generic Device by SNMP', matched: true },
-  { host: 'H3C-Switch-B', ip: '192.168.30.3', srcTpl: 'Network Generic Device by SNMP', dstTpl: 'Network Generic Device by SNMP', matched: true },
-  { host: 'ESXi-A', ip: '192.168.30.71', srcTpl: 'VMware HV', dstTpl: 'VMware HV', matched: true },
-  { host: 'ESXi-B', ip: '192.168.30.72', srcTpl: 'VMware HV', dstTpl: 'VMware HV', matched: true },
-  { host: 'ESXi-C', ip: '192.168.30.73', srcTpl: 'VMware HV', dstTpl: 'VMware HV', matched: true },
-  { host: 'ESXi-D', ip: '192.168.30.74', srcTpl: 'VMware HV', dstTpl: 'VMware HV', matched: true },
-  { host: 'Gud-VC02', ip: '192.168.30.14', srcTpl: 'VMware VM', dstTpl: 'VMware VM', matched: true },
-  { host: 'NTNX-CVM-B', ip: '192.168.30.76', srcTpl: 'VMware VM', dstTpl: 'VMware VM', matched: true },
-  { host: 'Dev-02', ip: '192.168.31.24', srcTpl: 'Template OS Linux', dstTpl: 'Server Linux by Agent', matched: true },
-  { host: 'WebServer-01', ip: '192.168.30.100', srcTpl: 'Template OS Linux', dstTpl: 'Server Linux by Agent', matched: true },
-  { host: 'WebServer-02', ip: '192.168.30.101', srcTpl: 'Template OS Linux', dstTpl: 'Server Linux by Agent', matched: true },
-  { host: 'DBServer-01', ip: '192.168.30.110', srcTpl: 'Template DB MySQL', dstTpl: 'MySQL by Agent', matched: true },
-  { host: 'DBServer-02', ip: '192.168.30.111', srcTpl: 'Template DB MySQL', dstTpl: 'MySQL by Agent', matched: true },
-  { host: 'FW-Main', ip: '192.168.30.1', srcTpl: 'Template SNMP Firewall', dstTpl: '—', matched: false },
-  { host: 'Backup-NAS', ip: '192.168.30.200', srcTpl: 'Template SNMP Generic', dstTpl: '—', matched: false },
+  { host: 'H3C-Switch-A', ip: '192.168.30.2', type: 'SNMP', dstTpl: '网络设备模板', supported: true },
+  { host: 'H3C-Switch-B', ip: '192.168.30.3', type: 'SNMP', dstTpl: '网络设备模板', supported: true },
+  { host: 'FW-Main', ip: '192.168.30.1', type: 'SNMP', dstTpl: '网络设备模板', supported: true },
+  { host: 'Backup-NAS', ip: '192.168.30.200', type: 'SNMP', dstTpl: '网络设备模板', supported: true },
+  { host: 'Zabbix server', ip: '127.0.0.1', type: 'Agent', dstTpl: '—', supported: false, note: 'Agent 暂不支持' },
+  { host: 'Dev-02', ip: '192.168.31.24', type: 'Agent', dstTpl: '—', supported: false, note: 'Agent 暂不支持' },
+  { host: 'WebServer-01', ip: '192.168.30.100', type: 'Agent', dstTpl: '—', supported: false, note: 'Agent 暂不支持' },
+  { host: 'DBServer-01', ip: '192.168.30.110', type: 'Agent', dstTpl: '—', supported: false, note: 'Agent 暂不支持' },
+  { host: 'ESXi-A', ip: '192.168.30.71', type: 'Agent', dstTpl: '—', supported: false, note: 'Agent 暂不支持' },
+  { host: 'Gud-VC02', ip: '192.168.30.14', type: 'Agent', dstTpl: '—', supported: false, note: 'Agent 暂不支持' },
 ];
 
 function showToast(msg, type) {
@@ -720,16 +721,29 @@ function goStep3() {
 
 function renderPreview() {
   const tbody = document.getElementById('preview-body');
-  tbody.innerHTML = previewData.map((p,i) => `
+  tbody.innerHTML = previewData.map((p,i) => {
+    if (p.supported) {
+      return `
     <tr>
       <td><input type="checkbox" class="host-select-cb" checked onchange="updateSelectedCount()" data-idx="${i}" style="accent-color:var(--brand);width:14px;height:14px;"></td>
       <td style="color:var(--text-primary);font-weight:500;">${p.host}</td>
       <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">${p.ip}</td>
-      <td style="font-size:12px;">${p.srcTpl}</td>
-      <td style="font-size:12px;color:${p.matched?'var(--text-primary)':'var(--warning)'};">${p.dstTpl}</td>
-      <td><span class="mapping-badge ${p.matched?'matched':'unmatched'}">${p.matched?'✓ 已匹配':'⚠ 需手动'}</span></td>
-    </tr>
-  `).join('');
+      <td><span class="type-badge snmp">SNMP</span></td>
+      <td style="font-size:12px;color:var(--text-primary);">${p.dstTpl}</td>
+      <td><span class="mapping-badge matched">✓ 可迁移</span></td>
+    </tr>`;
+    } else {
+      return `
+    <tr style="opacity:0.45;">
+      <td></td>
+      <td style="color:var(--text-muted);">${p.host}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-muted);">${p.ip}</td>
+      <td><span class="type-badge agent">Agent</span></td>
+      <td style="font-size:12px;color:var(--text-muted);">${p.dstTpl}</td>
+      <td><span class="mapping-badge unmatched">${p.note}</span></td>
+    </tr>`;
+    }
+  }).join('');
   updateSelectedCount();
 }
 
