@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tognix-Move — Zabbix 迁移工具</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
 <style>
 :root {
@@ -394,7 +393,7 @@ select.form-input option {
         </div>
         <div class="form-group">
           <label class="form-label" id="src-url-label">API 地址</label>
-          <input class="form-input" placeholder="https://192.168.1.100/zabbix/api_jsonrpc.php" value="https://192.168.30.10/api_jsonrpc.php" id="src-url">
+          <input class="form-input" placeholder="http://192.168.31.35/zabbix/api_jsonrpc.php" value="http://192.168.31.35/zabbix/api_jsonrpc.php" id="src-url">
           <span class="form-hint" id="src-url-hint">Zabbix 前端地址 + /api_jsonrpc.php</span>
         </div>
         <div class="form-group">
@@ -592,7 +591,7 @@ function onSourceTypeChange() {
   const type = document.getElementById('src-type').value;
   const labels = { zabbix: 'Zabbix', prometheus: 'Prometheus', netdata: 'Netdata', nagios: 'Nagios Core', icinga2: 'Icinga 2', checkmk: 'Checkmk Raw' };
   const hints = {
-    zabbix: { lbl: 'API 地址', hint: 'Zabbix 前端地址 + /api_jsonrpc.php', ph: 'https://192.168.1.100/zabbix/api_jsonrpc.php' },
+    zabbix: { lbl: 'API 地址', hint: 'Zabbix 前端地址 + /api_jsonrpc.php', ph: 'http://192.168.31.35/zabbix/api_jsonrpc.php' },
     prometheus: { lbl: 'Prometheus URL', hint: 'Prometheus HTTP API 地址，如 http://10.0.0.1:9090', ph: 'http://192.168.1.100:9090' },
     netdata: { lbl: 'Netdata URL', hint: 'Netdata API 地址，如 http://10.0.0.1:19999/api/v1', ph: 'http://192.168.1.100:19999/api/v1' },
     nagios: { lbl: 'Nagios 状态文件路径', hint: 'status.dat 文件路径 (SSH 访问)', ph: '/var/log/nagios/status.dat' },
