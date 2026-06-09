@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tognix-Move — Zabbix 迁移工具</title>
-<script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+<script src="/xlsx.full.min.js"></script>
 <style>
 :root {
   --bg-deep: #08090a;
@@ -673,8 +673,8 @@ async function testSource() {
       btn.innerHTML = '⚡ 测试连接';
       btn.style.color = 'var(--success)';
       btn.style.borderColor = 'var(--success)';
-      const hostCount = data.hosts_count || data.total_hosts || data.host_count || 0;
-      const tplCount = data.templates_count || data.total_templates || 0;
+      const hostCount = data.hosts || 0;
+      const tplCount = data.templates || 0;
       status.innerHTML = `<span class="status-dot ok"></span><span class="status-msg ok">连接成功 — ${data.version || 'Zabbix'}, ${hostCount} 台主机, ${tplCount} 个模板</span>`;
       document.getElementById('btn-next1').disabled = false;
       showToast('源 Zabbix 连接成功', 'success');
