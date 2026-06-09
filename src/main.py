@@ -14,14 +14,17 @@ urllib3.disable_warnings()
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
+from io import BytesIO
 
 from src.config import APP_CONFIG
 from src.zabbix_client import ZabbixClient
 from src.tognix_auth import TognixAuth
 from src.tognix_migrate import TognixMigrate
+from src.credential_extractor import CredentialExtractor
+from src.excel_exporter import ExcelExporter
 
 app = FastAPI(title="Tognix-Move", version="0.2.0")
 
@@ -95,6 +98,39 @@ def zabbix_preview(req: ZabbixPreviewRequest):
                 "macros": h.get("macros", []),
             })
         return {"success": True, "hosts": preview, "total_hosts": len(hosts)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# === Credential Export (Phase 5) ===
+
+@app.get("/api/credentials/export")
+def export_credentials(
+    zabbix_url: str,
+    zabbix_username: str,
+    zabbix_password: str
+):
+    """
+    Export Zabbix credentials to Excel file.
+    Returns xlsx file download.
+    """
+    client = ZabbixClient(zabbix_url)
+    if not client.login(zabbix_username, zabbix_password):
+        return {"success": False, "error": "Zabbix login failed"}
+
+    try:
+        extractor = CredentialExtractor(client)
+        credentials = extractor.extract_all()
+        summary = extractor.get_summary_by_type(credentials)
+
+        exporter = ExcelExporter(credentials, summary)
+        excel_bytes = exporter.generate()
+
+        return StreamingResponse(
+            BytesIO(excel_bytes),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=zabbix_credentials.xlsx"}
+        )
     except Exception as e:
         return {"success": False, "error": str(e)}
 
