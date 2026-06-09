@@ -60,17 +60,29 @@ class TognixAuth:
             return False
 
         try:
-            headers = self.get_headers()
+            # apiinfo.version 不需要 auth
             payload = {
                 "jsonrpc": "2.0",
                 "method": "apiinfo.version",
                 "params": [],
                 "id": 1
             }
-            resp = self.session.post(self.api_url, json=payload, headers=headers, timeout=10)
+            resp = self.session.post(self.api_url, json=payload, timeout=10)
             resp.raise_for_status()
             data = resp.json()
-            return "result" in data and "error" not in data
+            # 如果能获取版本，说明 token 有效（实际上 token 验证需要调用其他方法）
+            # 更好的验证方式：尝试调用 host.get
+            headers = self.get_headers()
+            payload2 = {
+                "jsonrpc": "2.0",
+                "method": "host.get",
+                "params": {"output": ["hostid"], "limit": 1},
+                "id": 1
+            }
+            resp2 = self.session.post(self.api_url, json=payload2, headers=headers, timeout=10)
+            resp2.raise_for_status()
+            data2 = resp2.json()
+            return "result" in data2 and "error" not in data2
         except Exception:
             return False
 

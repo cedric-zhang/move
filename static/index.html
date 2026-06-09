@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tognix-Move — Zabbix 迁移工具</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+<style>
+:root {
+  --bg-deep: #08090a;
+  --bg-panel: #0f1011;
+  --bg-surface: #191a1b;
+  --bg-elevated: #222325;
+  --text-primary: #f7f8f8;
+  --text-secondary: #d0d6e0;
+  --text-tertiary: #8a8f98;
+  --text-muted: #62666d;
+  --brand: #5e6ad2;
+  --brand-bright: #7170ff;
+  --brand-hover: #828fff;
+  --success: #27a644;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --border-standard: rgba(255,255,255,0.08);
+  --border-subtle: rgba(255,255,255,0.05);
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg-deep);
+  color: var(--text-secondary);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+.container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+/* Header */
+.header {
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 16px 0;
+  background: rgba(8,9,10,0.85);
+  backdrop-filter: blur(12px);
+  position: sticky; top: 0; z-index: 100;
+}
+.header-inner { display: flex; align-items: center; justify-content: space-between; max-width: 960px; margin: 0 auto; padding: 0 24px; }
+.logo { display: flex; align-items: center; gap: 10px; }
+.logo-icon {
+  width: 32px; height: 32px;
+  background: linear-gradient(135deg, var(--brand), var(--brand-bright));
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700; color: #fff;
+}
+.logo-text { font-size: 15px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.2px; }
+.logo-sub { font-size: 12px; color: var(--text-muted); font-weight: 400; }
+.header-badge {
+  font-size: 11px; font-weight: 500; color: var(--text-muted);
+  background: var(--bg-elevated); padding: 4px 10px;
+  border-radius: 99px; border: 1px solid var(--border-subtle);
+}
+
+/* Main */
+.main { padding: 40px 0 80px; }
+
+/* Step Indicator */
+.steps { display: flex; align-items: center; justify-content: center; gap: 0; margin-bottom: 40px; }
+.step {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px; border-radius: var(--radius-lg);
+  font-size: 14px; font-weight: 500; color: var(--text-muted);
+  transition: all 0.3s ease;
+}
+.step-num {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 600;
+  background: var(--bg-elevated); color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  transition: all 0.3s ease;
+}
+.step.active { color: var(--text-primary); }
+.step.active .step-num { background: var(--brand); color: #fff; border-color: var(--brand); box-shadow: 0 0 16px rgba(94,106,210,0.3); }
+.step.done { color: var(--text-secondary); }
+.step.done .step-num { background: var(--success); color: #fff; border-color: var(--success); }
+.step-line { width: 40px; height: 1px; background: var(--border-standard); flex-shrink: 0; }
+.step-line.done { background: var(--success); }
+
+/* Card */
+.card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-standard);
+  border-radius: var(--radius-xl);
+  padding: 32px;
+  transition: all 0.3s ease;
+}
+.card-header { margin-bottom: 28px; }
+.card-title { font-size: 20px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.24px; margin-bottom: 6px; }
+.card-desc { font-size: 14px; color: var(--text-tertiary); }
+
+/* Form */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-full { grid-column: 1 / -1; }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-label { font-size: 12px; font-weight: 500; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; }
+.form-input {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border-standard);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px; font-size: 14px; color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  transition: all 0.2s ease;
+  outline: none;
+  width: 100%;
+}
+select.form-input {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238a8f98'%3E%3Cpath d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+  cursor: pointer;
+}
+select.form-input option {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+.form-input:focus { border-color: var(--brand-bright); box-shadow: 0 0 0 3px rgba(94,106,210,0.15); }
+.form-input::placeholder { color: var(--text-muted); }
+.form-hint { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.form-input-wrap { position: relative; }
+.form-input-wrap .form-input { width: 100%; padding-right: 40px; }
+
+.pwd-toggle {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
+  font-size: 16px; padding: 4px; line-height: 1;
+  transition: color 0.2s;
+}
+.pwd-toggle:hover { color: var(--text-secondary); }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 20px; border-radius: var(--radius-sm);
+  font-size: 14px; font-weight: 500; cursor: pointer;
+  border: none; outline: none; transition: all 0.2s ease;
+  font-family: 'Inter', sans-serif;
+  text-decoration: none;
+}
+.btn-primary { background: var(--brand); color: #fff; }
+.btn-primary:hover { background: var(--brand-bright); box-shadow: 0 4px 20px rgba(94,106,210,0.35); }
+.btn-secondary { background: rgba(255,255,255,0.04); color: var(--text-secondary); border: 1px solid var(--border-standard); }
+.btn-secondary:hover { background: rgba(255,255,255,0.08); }
+.btn-ghost { background: transparent; color: var(--text-tertiary); }
+.btn-ghost:hover { color: var(--text-primary); }
+.btn-test {
+  background: transparent; color: var(--success); border: 1px solid rgba(39,166,68,0.3);
+  font-size: 12px; padding: 6px 14px;
+}
+.btn-test:hover { background: rgba(39,166,68,0.1); border-color: var(--success); }
+.btn-test.loading { opacity: 0.6; pointer-events: none; }
+.form-actions { display: flex; gap: 12px; margin-top: 24px; justify-content: flex-end; }
+
+/* Status indicator */
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.status-dot.ok { background: var(--success); box-shadow: 0 0 8px rgba(39,166,68,0.5); }
+.status-dot.error { background: var(--error); box-shadow: 0 0 8px rgba(239,68,68,0.5); }
+.status-dot.idle { background: var(--text-muted); }
+.status-msg { font-size: 12px; font-weight: 500; }
+.status-msg.ok { color: var(--success); }
+.status-msg.error { color: var(--error); }
+
+/* Migration Step */
+.migration-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+.stat-card {
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md); padding: 16px; text-align: center;
+}
+.stat-value { font-size: 28px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.5px; }
+.stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+/* Progress */
+.progress-section { margin-bottom: 24px; }
+.progress-header { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+.progress-title { color: var(--text-secondary); font-weight: 500; }
+.progress-pct { color: var(--brand-bright); font-weight: 600; }
+.progress-bar-outer {
+  height: 4px; background: var(--bg-surface);
+  border-radius: 2px; overflow: hidden;
+}
+.progress-bar-inner {
+  height: 100%; background: linear-gradient(90deg, var(--brand), var(--brand-bright));
+  border-radius: 2px; transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 0%;
+}
+
+/* Log */
+.log-container {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  height: 240px; overflow-y: auto;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px; line-height: 1.8;
+}
+.log-entry { display: flex; gap: 10px; }
+.log-time { color: var(--text-muted); flex-shrink: 0; }
+.log-msg { color: var(--text-secondary); }
+.log-msg.success { color: var(--success); }
+.log-msg.warning { color: var(--warning); }
+.log-msg.error { color: var(--error); }
+.log-msg.info { color: var(--brand-bright); }
+
+/* Preview / mapping */
+.mapping-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 13px; margin-top: 16px;
+}
+.mapping-table th {
+  text-align: left; padding: 10px 14px;
+  color: var(--text-muted); font-weight: 500; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mapping-table td {
+  padding: 12px 14px; color: var(--text-secondary);
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+.mapping-table tr:hover td { background: rgba(255,255,255,0.02); }
+.mapping-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 99px;
+  font-size: 11px; font-weight: 500;
+}
+.mapping-badge.matched { background: rgba(39,166,68,0.15); color: var(--success); }
+.mapping-badge.unmatched { background: rgba(245,158,11,0.15); color: var(--warning); }
+
+/* Completion */
+.completion {
+  text-align: center; padding: 40px 0;
+}
+.completion-icon {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: rgba(39,166,68,0.15); margin: 0 auto 20px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px;
+}
+.completion-title { font-size: 22px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
+.completion-desc { font-size: 14px; color: var(--text-tertiary); margin-bottom: 24px; }
+
+/* Spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 14px; height: 14px; border: 2px solid var(--border-standard);
+  border-top-color: var(--brand-bright);
+  border-radius: 50%; animation: spin 0.6s linear infinite;
+  display: inline-block;
+}
+
+/* Fade */
+.fade-enter { animation: fadeIn 0.3s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.hidden { display: none !important; }
+
+/* Pulse */
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+.pulse { animation: pulse 2s ease-in-out infinite; }
+
+/* Toggle switch */
+.toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+  transition: all 0.2s ease;
+}
+.toggle-row:hover { border-color: var(--border-standard); }
+.toggle-info { display: flex; flex-direction: column; gap: 2px; }
+.toggle-label { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.toggle-desc { font-size: 11px; color: var(--text-muted); }
+.toggle-switch {
+  position: relative; width: 40px; height: 22px; flex-shrink: 0;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--bg-elevated); border: 1px solid var(--border-standard);
+  border-radius: 99px; transition: all 0.25s ease;
+}
+.toggle-slider::before {
+  content: ''; position: absolute; left: 2px; bottom: 2px;
+  width: 16px; height: 16px; background: var(--text-muted);
+  border-radius: 50%; transition: all 0.25s ease;
+}
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--brand); border-color: var(--brand);
+}
+.toggle-switch input:checked + .toggle-slider::before {
+  background: #fff; transform: translateX(18px);
+}
+
+/* Credential summary */
+.cred-summary {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-top: 12px;
+}
+.cred-summary-title {
+  font-size: 12px; font-weight: 600; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px;
+}
+.cred-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.cred-chip {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-secondary);
+  padding: 6px 10px; background: rgba(255,255,255,0.... [truncated]
+.toast {
+  position: fixed; top: 20px; right: 20px; z-index: 200;
+  padding: 12px 20px; border-radius: var(--radius-md);
+  font-size: 13px; font-weight: 500;
+  animation: fadeIn 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+}
+@keyframes fadeOut { to { opacity: 0; transform: translateY(-10px); } }
+.toast.success { background: rgba(39,166,68,0.2); border: 1px solid rgba(39,166,68,0.3); color: var(--success); }
+.toast.error { background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.3); color: var(--error); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-icon">⇄</div>
+      <div>
+        <div class="logo-text">Tognix-Move</div>
+        <div class="logo-sub">Zabbix → Tognix 迁移工具</div>
+      </div>
+    </div>
+    <div class="header-badge">v0.1.0 Demo</div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="container">
+
+    <!-- Steps -->
+    <div class="steps">
+      <div class="step active" id="step1-indicator">
+        <div class="step-num">1</div> 连接源平台
+      </div>
+      <div class="step-line" id="line1"></div>
+      <div class="step" id="step2-indicator">
+        <div class="step-num">2</div> 连接目标 Tognix
+      </div>
+      <div class="step-line" id="line2"></div>
+      <div class="step" id="step3-indicator">
+        <div class="step-num">3</div> 执行迁移
+      </div>
+    </div>
+
+    <!-- Step 1: Source Zabbix -->
+    <div class="card fade-enter" id="step1-panel">
+      <div class="card-header">
+        <div class="card-title">源监控平台</div>
+        <div class="card-desc">选择源监控平台类型，填写连接信息，点击「测试连接」验证。</div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">监控平台</label>
+          <select class="form-input" id="src-type" onchange="onSourceTypeChange()">
+            <option value="zabbix" selected>Zabbix</option>
+            <option value="prometheus">Prometheus</option>
+            <option value="netdata">Netdata</option>
+            <option value="nagios">Nagios Core</option>
+            <option value="icinga2">Icinga 2</option>
+            <option value="checkmk">Checkmk Raw</option>
+          </select>
+          <span class="form-hint" id="src-type-hint">⭐ GitHub 开源监控 Top 5 — 当前仅 Zabbix 可用，其余待后续版本支持</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" id="src-url-label">API 地址</label>
+          <input class="form-input" placeholder="https://192.168.1.100/zabbix/api_jsonrpc.php" value="https://192.168.30.10/api_jsonrpc.php" id="src-url">
+          <span class="form-hint" id="src-url-hint">Zabbix 前端地址 + /api_jsonrpc.php</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">用户名</label>
+          <input class="form-input" placeholder="Admin" value="Admin" id="src-user">
+        </div>
+        <div class="form-group">
+          <label class="form-label">密码</label>
+          <div class="form-input-wrap">
+            <input class="form-input" type="password" placeholder="••••••••" value="zabbix" id="src-pass">
+            <button class="pwd-toggle" onclick="togglePwd('src-pass', this)" title="显示密码">👁</button>
+          </div>
+        </div>
+        <div class="form-group" style="justify-content: flex-end;">
+          <button class="btn btn-test" onclick="testSource()" id="btn-test-src">
+            ⚡ 测试连接
+          </button>
+        </div>
+      </div>
+      <div id="src-status" style="margin-top: 12px;"></div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="goStep2()" id="btn-next1" disabled>下一步 →</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Target Tognix -->
+    <div class="card fade-enter hidden" id="step2-panel">
+      <div class="card-header">
+        <div class="card-title">目标 Tognix 服务器</div>
+        <div class="card-desc">连接 Tognix 平台。迁移将通过远程 API 自动完成主机创建、SNMP 扫描、模板匹配。</div>
+      </div>
+
+      <!-- SNMP Only Notice -->
+      <div class="notice-box" style="background: linear-gradient(135deg, #ff6b35 0%, #f7931a 100%); border-radius: 8px; padding: 12px 16px; margin: 12px 0;">
+        <span style="color: white; font-weight: 500;">⚠️ 当前版本仅支持 SNMP 网络设备迁移</span>
+      </div>
+
+      <!-- API Mode -->
+      <div id="dst-api-fields">
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Tognix API 地址</label>
+            <input class="form-input" placeholder="https://192.168.31.128:1618/api_jsonrpc.php" value="https://192.168.31.128:1618/api_jsonrpc.php" id="dst-url">
+            <span class="form-hint">Tognix 后端 API 地址（端口 1618）</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">用户名</label>
+            <input class="form-input" placeholder="Admin" value="Admin" id="dst-user">
+          </div>
+          <div class="form-group">
+            <label class="form-label">密码</label>
+            <div class="form-input-wrap">
+              <input class="form-input" type="password" placeholder="••••••••" value="baizeyao" id="dst-pass">
+              <button class="pwd-toggle" onclick="togglePwd('dst-pass', this)" title="显示密码">👁</button>
+            </div>
+          </div>
+          <div class="form-group" style="justify-content: flex-end;">
+            <button class="btn btn-test" onclick="testTarget()" id="btn-test-dst">
+              ⚡ 测试连接
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="dst-status" style="margin-top: 12px;"></div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="goStep1()">← 上一步</button>
+        <button class="btn btn-primary" onclick="goStep3()" id="btn-next2" disabled>下一步 → 预览迁移</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Migration -->
+    <div class="card fade-enter hidden" id="step3-panel">
+      <div class="card-header">
+        <div class="card-title">迁移预览与执行</div>
+        <div class="card-desc">以下是将从源 Zabbix 迁移到 Tognix 的监控对象预览。模板已自动映射为 Tognix 等价模板。</div>
+        <div style="margin-top:12px;padding:10px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:6px;font-size:12px;color:var(--warning);display:flex;align-items:center;gap:8px;">
+          <span style="font-size:16px;">⚠️</span>
+          <span><strong>注意：</strong>迁移不包含监控历史数据，仅迁移主机。《Tognix 将从迁移完成时刻开始采集新数据》</span>
+        </div>
+      </div>
+
+      <!-- Preview Table -->
+      <table class="mapping-table">
+        <thead>
+          <tr><th style="width:30px;"><input type="checkbox" checked onchange="toggleSelectAll(this)" id="select-all-cb2" style="accent-color:var(--brand);width:14px;height:14px;"></th><th>源主机</th><th>IP</th><th>源模板</th><th>→ Tognix 模板</th><th>状态</th></tr>
+        </thead>
+        <tbody id="preview-body">
+        </tbody>
+      </table>
+
+      <div class="form-actions" style="justify-content: space-between; align-items: center;">
+
+      <!-- Credential Migration Option -->
+      <div class="toggle-row" style="margin-bottom: 0;">
+        <div class="toggle-info">
+          <span class="toggle-label">🔐 同时迁移 SNMP 及其他凭证</span>
+          <span class="toggle-desc" id="cred-desc">检测到 5 个凭证（2 SNMPv2 · 1 SNMPv3 · 1 VMware · 1 SSH）。开启后将自动创建到 Tognix 凭证库。</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="cred-toggle" checked onchange="onCredToggle()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="form-actions" style="justify-content: space-between; align-items: center;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-tertiary);" id="select-all-label">
+            <input type="checkbox" checked onchange="toggleSelectAll(this)" id="select-all-cb" style="accent-color:var(--brand);width:14px;height:14px;">
+            全选 / 取消
+          </label>
+          <span style="font-size:11px;color:var(--text-muted);" id="selected-count">已选 15 台</span>
+        </div>
+        <button class="btn btn-ghost" onclick="goStep2()">← 上一步</button>
+        <button class="btn btn-primary" onclick="startMigration()" id="btn-start">
+          🚀 开始迁移
+        </button>
+      </div>
+
+      <!-- Progress (hidden initially) -->
+      <div id="progress-section" class="hidden" style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border-subtle);">
+        <div class="migration-stats">
+          <div class="stat-card"><div class="stat-value" id="stat-total">0</div><div class="stat-label">已选主机</div></div>
+          <div class="stat-card"><div class="stat-value" id="stat-done" style="color: var(--success);">0</div><div class="stat-label">已完成</div></div>
+          <div class="stat-card"><div class="stat-value" id="stat-fail" style="color: var(--error);">0</div><div class="stat-label">失败</div></div>
+          <div class="stat-card"><div class="stat-value" id="stat-pending" style="color: var(--text-muted);">0</div><div class="stat-label">待迁移</div></div>
+        </div>
+        <div class="progress-section">
+          <div class="progress-header">
+            <span class="progress-title" id="progress-title">正在迁移: H3C-Switch-A</span>
+            <span class="progress-pct" id="progress-pct">0%</span>
+          </div>
+          <div class="progress-bar-outer">
+            <div class="progress-bar-inner" id="progress-bar"></div>
+          </div>
+        </div>
+        <div class="log-container" id="log-container">
+          <div class="log-entry"><span class="log-time" style="color:var(--text-muted);">--:--:--</span><span class="log-msg" style="color:var(--text-muted);">等待开始迁移...</span></div>
+        </div>
+      </div>
+
+      <!-- Completion (hidden initially) -->
+      <div id="completion-section" class="hidden completion">
+        <div class="completion-icon">✅</div>
+        <div class="completion-title">迁移完成</div>
+        <div class="completion-desc" id="completion-desc">成功迁移 32 台主机到 Tognix 平台。请登录 Tognix 确认。</div>
+
+        <!-- Credential Export -->
+        <div id="cred-export-section" class="cred-summary" style="text-align:left; max-width: 480px; margin: 0 auto 20px;">
+          <div class="cred-summary-title">📋 Zabbix 凭证导出</div>
+          <div class="cred-grid" style="margin-bottom: 14px;">
+            <div class="cred-chip"><span class="cred-chip-icon">🔑</span> SNMPv2 Community<span class="cred-chip-count">2</span></div>
+            <div class="cred-chip"><span class="cred-chip-icon">🔒</span> SNMPv3<span class="cred-chip-count">1</span></div>
+            <div class="cred-chip"><span class="cred-chip-icon">🖥</span> VMware<span class="cred-chip-count">1</span></div>
+            <div class="cred-chip"><span class="cred-chip-icon">🔗</span> SSH<span class="cred-chip-count">1</span></div>
+            <div class="cred-chip"><span class="cred-chip-icon">☁️</span> HTTP/API<span class="cred-chip-count">2</span></div>
+            <div class="cred-chip"><span class="cred-chip-icon">🗄</span> JMX<span class="cred-chip-count">1</span></div>
+          </div>
+          <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">
+            以下凭证已从源 Zabbix 提取，建议下载 Excel 存档备查。Tognix 不存储明文密码，原始凭证仅在此文件中。
+          </p>
+          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+            <button class="btn btn-download" onclick="downloadCredentialsExcel()">
+              📥 下载凭证 Excel (.xlsx)
+            </button>
+            <span id="cred-download-done" style="display:none;font-size:12px;color:var(--success);">✅ 已下载</span>
+          </div>
+        </div>
+
+        <a href="https://192.168.31.128" target="_blank" class="btn btn-primary">打开 Tognix 平台 →</a>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// State
+let currentStep = 1;
+let srcOk = false, dstOk = false;
+let migrating = false;
+
+function togglePwd(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    btn.textContent = '👁';
+  }
+}
+
+function onSourceTypeChange() {
+  const type = document.getElementById('src-type').value;
+  const labels = { zabbix: 'Zabbix', prometheus: 'Prometheus', netdata: 'Netdata', nagios: 'Nagios Core', icinga2: 'Icinga 2', checkmk: 'Checkmk Raw' };
+  const hints = {
+    zabbix: { lbl: 'API 地址', hint: 'Zabbix 前端地址 + /api_jsonrpc.php', ph: 'https://192.168.1.100/zabbix/api_jsonrpc.php' },
+    prometheus: { lbl: 'Prometheus URL', hint: 'Prometheus HTTP API 地址，如 http://10.0.0.1:9090', ph: 'http://192.168.1.100:9090' },
+    netdata: { lbl: 'Netdata URL', hint: 'Netdata API 地址，如 http://10.0.0.1:19999/api/v1', ph: 'http://192.168.1.100:19999/api/v1' },
+    nagios: { lbl: 'Nagios 状态文件路径', hint: 'status.dat 文件路径 (SSH 访问)', ph: '/var/log/nagios/status.dat' },
+    icinga2: { lbl: 'Icinga 2 API URL', hint: 'Icinga 2 API 地址，如 https://10.0.0.1:5665/v1', ph: 'https://192.168.1.100:5665/v1' },
+    checkmk: { lbl: 'Checkmk URL', hint: 'Checkmk Web API 地址', ph: 'https://192.168.1.100/mysite/check_mk/api/1.0' }
+  };
+  const h = hints[type];
+  document.getElementById('src-url-label').textContent = h.lbl;
+  document.getElementById('src-url-hint').textContent = h.hint;
+  document.getElementById('src-url').placeholder = h.ph;
+  document.getElementById('src-url').value = h.ph;
+  document.getElementById('src-status').innerHTML = '';
+  document.getElementById('btn-test-src').style.color = '';
+  document.getElementById('btn-test-src').style.borderColor = '';
+  document.getElementById('btn-next1').disabled = true;
+  srcOk = false;
+  if (type !== 'zabbix') {
+    document.getElementById('src-type-hint').textContent = '⚠️ ' + labels[type] + ' 迁移功能将在后续版本支持，当前仅 Zabbix 可用';
+    document.getElementById('src-type-hint').style.color = 'var(--warning)';
+  } else {
+    document.getElementById('src-type-hint').textContent = '⭐ GitHub 开源监控 Top 5 — 当前仅 Zabbix 可用，其余待后续版本支持';
+    document.getElementById('src-type-hint').style.color = '';
+  }
+}
+
+function toggleSelectAll(cb) {
+  const checked = cb.checked;
+  document.querySelectorAll('.host-select-cb').forEach(c => c.checked = checked);
+  document.querySelectorAll('#select-all-cb, #select-all-cb2').forEach(c => c.checked = checked);
+  updateSelectedCount();
+}
+
+function updateSelectedCount() {
+  const total = document.querySelectorAll('.host-select-cb').length;
+  const selected = document.querySelectorAll('.host-select-cb:checked').length;
+  const el = document.getElementById('selected-count');
+  if (el) el.textContent = `已选 ${selected} 台`;
+  const btn = document.getElementById('btn-start');
+  if (btn && !migrating) btn.disabled = selected === 0;
+}
+
+// Preview data
+const previewData = [
+  { host: 'H3C-Switch-A', ip: '192.168.30.2', srcTpl: 'Network Generic Device by SNMP', dstTpl: 'Network Generic Device by SNMP', matched: true },
+  { host: 'H3C-Switch-B', ip: '192.168.30.3', srcTpl: 'Network Generic Device by SNMP', dstTpl: 'Network Generic Device by SNMP', matched: true },
+  { host: 'ESXi-A', ip: '192.168.30.71', srcTpl: 'VMware HV', dstTpl: 'VMware HV', matched: true },
+  { host: 'ESXi-B', ip: '192.168.30.72', srcTpl: 'VMware HV', dstTpl: 'VMware HV', matched: true },
+  { host: 'ESXi-C', ip: '192.168.30.73', srcTpl: 'VMware HV', dstTpl: 'VMware HV', matched: true },
+  { host: 'ESXi-D', ip: '192.168.30.74', srcTpl: 'VMware HV', dstTpl: 'VMware HV', matched: true },
+  { host: 'Gud-VC02', ip: '192.168.30.14', srcTpl: 'VMware VM', dstTpl: 'VMware VM', matched: true },
+  { host: 'NTNX-CVM-B', ip: '192.168.30.76', srcTpl: 'VMware VM', dstTpl: 'VMware VM', matched: true },
+  { host: 'Dev-02', ip: '192.168.31.24', srcTpl: 'Template OS Linux', dstTpl: 'Server Linux by Agent', matched: true },
+  { host: 'WebServer-01', ip: '192.168.30.100', srcTpl: 'Template OS Linux', dstTpl: 'Server Linux by Agent', matched: true },
+  { host: 'WebServer-02', ip: '192.168.30.101', srcTpl: 'Template OS Linux', dstTpl: 'Server Linux by Agent', matched: true },
+  { host: 'DBServer-01', ip: '192.168.30.110', srcTpl: 'Template DB MySQL', dstTpl: 'MySQL by Agent', matched: true },
+  { host: 'DBServer-02', ip: '192.168.30.111', srcTpl: 'Template DB MySQL', dstTpl: 'MySQL by Agent', matched: true },
+  { host: 'FW-Main', ip: '192.168.30.1', srcTpl: 'Template SNMP Firewall', dstTpl: '—', matched: false },
+  { host: 'Backup-NAS', ip: '192.168.30.200', srcTpl: 'Template SNMP Generic', dstTpl: '—', matched: false },
+];
+
+function showToast(msg, type) {
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+function testSource() {
+  const btn = document.getElementById('btn-test-src');
+  const status = document.getElementById('src-status');
+  btn.classList.add('loading');
+  btn.innerHTML = '<span class="spinner"></span> 测试中...';
+  status.innerHTML = '';
+
+  setTimeout(() => {
+    srcOk = true;
+    btn.classList.remove('loading');
+    btn.innerHTML = '⚡ 测试连接';
+    btn.style.color = 'var(--success)';
+    btn.style.borderColor = 'var(--success)';
+    status.innerHTML = '<span class="status-dot ok"></span><span class="status-msg ok">连接成功 — Zabbix 6.0.25, 32 台主机, 98 个模板</span>';
+    document.getElementById('btn-next1').disabled = false;
+    showToast('源 Zabbix 连接成功', 'success');
+  }, 1500);
+}
+
+function testTarget() {
+  const btn = document.getElementById('btn-test-dst');
+  const status = document.getElementById('dst-status');
+  btn.classList.add('loading');
+  btn.innerHTML = '<span class="spinner"></span> 测试中...';
+  status.innerHTML = '';
+
+  setTimeout(() => {
+    dstOk = true;
+    btn.classList.remove('loading');
+    btn.innerHTML = '⚡ 测试连接';
+    btn.style.color = 'var(--success)';
+    btn.style.borderColor = 'var(--success)';
+    status.innerHTML = '<span class="status-dot ok"></span><span class="status-msg ok">连接成功 — Tognix 平台已就绪</span>';
+    document.getElementById('btn-next2').disabled = false;
+    showToast('目标 Tognix 连接成功', 'success');
+  }, 1500);
+}
+
+function setStepUI(step) {
+  currentStep = step;
+  ['step1','step2','step3'].forEach((s,i) => {
+    const panel = document.getElementById(s+'-panel');
+    const indicator = document.getElementById(s+'-indicator');
+    panel.classList.add('hidden');
+    indicator.classList.remove('active','done');
+    if (i+1 < step) indicator.classList.add('done');
+    if (i+1 === step) indicator.classList.add('active');
+  });
+  document.getElementById('step'+step+'-panel').classList.remove('hidden');
+  document.getElementById('step'+step+'-panel').classList.add('fade-enter');
+  ['line1','line2'].forEach((l,i) => {
+    if (i+1 < step) document.getElementById(l).classList.add('done');
+    else document.getElementById(l).classList.remove('done');
+  });
+}
+
+function goStep1() { setStepUI(1); }
+function goStep2() { setStepUI(2); }
+function goStep3() {
+  setStepUI(3);
+  renderPreview();
+}
+
+function renderPreview() {
+  const tbody = document.getElementById('preview-body');
+  tbody.innerHTML = previewData.map((p,i) => `
+    <tr>
+      <td><input type="checkbox" class="host-select-cb" checked onchange="updateSelectedCount()" data-idx="${i}" style="accent-color:var(--brand);width:14px;height:14px;"></td>
+      <td style="color:var(--text-primary);font-weight:500;">${p.host}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">${p.ip}</td>
+      <td style="font-size:12px;">${p.srcTpl}</td>
+      <td style="font-size:12px;color:${p.matched?'var(--text-primary)':'var(--warning)'};">${p.dstTpl}</td>
+      <td><span class="mapping-badge ${p.matched?'matched':'unmatched'}">${p.matched?'✓ 已匹配':'⚠ 需手动'}</span></td>
+    </tr>
+  `).join('');
+  updateSelectedCount();
+}
+
+function addLog(msg, type) {
+  const container = document.getElementById('log-container');
+  const now = new Date();
+  const time = now.toTimeString().slice(0,8);
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.innerHTML = `<span class="log-time">${time}</span><span class="log-msg ${type}">${msg}</span>`;
+  container.appendChild(entry);
+  container.scrollTop = container.scrollHeight;
+}
+
+function startMigration() {
+  if (migrating) return;
+  migrating = true;
+
+  document.getElementById('btn-start').disabled = true;
+  document.getElementById('btn-start').innerHTML = '<span class="spinner"></span> 迁移中...';
+  document.getElementById('progress-section').classList.remove('hidden');
+  document.getElementById('progress-section').classList.add('fade-enter');
+
+  const hosts = previewData.filter((p,i) => {
+    const cb = document.querySelector(`.host-select-cb[data-idx="${i}"]`);
+    return cb && cb.checked;
+  });
+  const total = hosts.length;
+
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-pending').textContent = total;
+
+  addLog(`开始迁移 — 共 ${total} 台主机 (${previewData.length - total} 台已取消选择)`, 'info');
+  addLog('模板映射策略: Tognix 原生模板', 'info');
+
+  // Credential migration log
+  const credOn = document.getElementById('cred-toggle').checked;
+  if (credOn) {
+    addLog('🔐 凭证迁移已启用 — 将同步创建到 Tognix 凭证库', 'info');
+  } else {
+    addLog('⚠ 凭证迁移已关闭 — SNMP 团体名等需手动配置', 'warning');
+  }
+
+  let done = 0, fail = 0, idx = 0;
+
+  function migrateNext() {
+    if (idx >= hosts.length) {
+      // Complete
+      setTimeout(() => {
+        // Simulate credential migration
+        const credOn = document.getElementById('cred-toggle').checked;
+        if (credOn) {
+          addLog('🔐 凭证迁移: public (SNMPv2) → Tognix 凭证 #103', 'success');
+          addLog('🔐 凭证迁移: snmpv3-admin (SNMPv3) → Tognix 凭证 #104', 'success');
+          addLog('🔐 凭证迁移: VC (VMware) → Tognix 凭证 #105 (复用已有)', 'success');
+          addLog('🔐 凭证迁移: linux-ssh-key (SSH) → Tognix 凭证 #106', 'success');
+          addLog('📋 共迁移 5 个凭证到 Tognix，1 个 SNMPv2 (internal-ro) 因取消勾选主机而跳过', 'info');
+        }
+
+        document.getElementById('progress-section').classList.add('hidden');
+        document.getElementById('completion-section').classList.remove('hidden');
+        document.getElementById('completion-section').classList.add('fade-enter');
+        document.getElementById('completion-desc').textContent =
+          `成功迁移 ${done} 台主机，${fail} 台失败。共 ${previewData.length} 台主机，其中 ${previewData.length - done - fail} 台未选择迁移。`;
+        setStepUI(3);
+        showToast('迁移完成！', 'success');
+      }, 500);
+      return;
+    }
+
+    const host = hosts[idx];
+    document.getElementById('progress-title').textContent = `正在迁移: ${host.host}`;
+
+    // Simulate occasional failure
+    const willFail = false; // idx === 7; // demo: no failures
+
+    const delay = 400 + Math.random() * 600;
+    setTimeout(() => {
+      if (willFail) {
+        fail++;
+        addLog(`✗ ${host.host} (${host.ip}) — 迁移失败: SNMP 超时`, 'error');
+      } else {
+        done++;
+        addLog(`✓ ${host.host} (${host.ip}) → ${host.dstTpl}`, 'success');
+      }
+
+      const pct = Math.round((done+fail) / hosts.length * 100);
+      document.getElementById('progress-pct').textContent = pct + '%';
+      document.getElementById('progress-bar').style.width = pct + '%';
+      document.getElementById('stat-done').textContent = done;
+      document.getElementById('stat-fail').textContent = fail;
+      document.getElementById('stat-pending').textContent = hosts.length - done - fail;
+
+      if (pct > 50 && pct < 80) {
+        addLog(`已迁移 ${done} 台，进度 ${pct}%`, 'info');
+      }
+      if (pct >= 90) {
+        addLog(`即将完成 — ${hosts.length - done - fail} 台剩余`, 'info');
+      }
+
+      idx++;
+      migrateNext();
+    }, delay);
+  }
+
+  migrateNext();
+}
+
+// === Credential Management ===
+const credentialData = [
+  { name: 'public', type: 'SNMPv2', protocol: 'SNMPv2', community: 'public', port: 161, hosts: 'H3C-Switch-A, H3C-Switch-B', migrated: '是' },
+  { name: 'internal-ro', type: 'SNMPv2', protocol: 'SNMPv2', community: '******', port: 161, hosts: 'FW-Main, Backup-NAS', migrated: '否（取消勾选）' },
+  { name: 'snmpv3-admin', type: 'SNMPv3', protocol: 'SNMPv3', user: 'snmpadmin', authProto: 'SHA256', privProto: 'AES128', port: 161, hosts: 'Core-Router-01', migrated: '是' },
+  { name: 'VC', type: 'VMware', protocol: 'VMware', user: 'administrator@vsphere.local', port: 443, hosts: 'Gud-VC02, ESXi-A~D', migrated: '是' },
+  { name: 'linux-ssh-key', type: 'SSH', protocol: 'SSH', user: 'root', authType: '私钥', port: 22, hosts: 'Dev-02, WebServer-01, WebServer-02', migrated: '是' },
+  { name: 'nginx-http-token', type: 'HTTP/API', protocol: 'HTTP', token: 'eyJhbG...***', hosts: 'WebServer-01, WebServer-02', migrated: '不适用' },
+  { name: 'tomcat-jmx', type: 'JMX', protocol: 'JMX', user: 'monitor', port: 12345, hosts: 'AppServer-01', migrated: '不适用' },
+  { name: 'prometheus-read', type: 'HTTP/API', protocol: 'HTTP', user: 'reader', hosts: 'Prometheus-Server', migrated: '不适用' },
+];
+
+function onCredToggle() {
+  const checked = document.getElementById('cred-toggle').checked;
+  const desc = document.getElementById('cred-desc');
+  if (checked) {
+    desc.textContent = '检测到 5 个凭证（2 SNMPv2 · 1 SNMPv3 · 1 VMware · 1 SSH）。开启后将自动创建到 Tognix 凭证库。';
+  } else {
+    desc.textContent = '凭证迁移已关闭。主机监控项仍会迁移，但 SNMP 团体名等需在 Tognix 中手动配置。';
+  }
+}
+
+function downloadCredentialsExcel() {
+  const credMigrated = document.getElementById('cred-toggle').checked;
+
+  // Build sheet data
+  const headers = ['凭证名称', '类型', '协议', '用户名', '认证方式', '端口', '关联主机', '迁移状态'];
+  const rows = credentialData.map(c => [
+    c.name,
+    c.type,
+    c.protocol,
+    c.user || c.community || c.token || '—',
+    c.authType || c.authProto || (c.type === 'SNMPv2' ? 'Community String' : '—'),
+    c.port || '—',
+    c.hosts,
+    c.migrated
+  ]);
+
+  const sheetData = [headers, ...rows];
+  const ws = XLSX.utils.aoa_to_sheet(sheetData);
+
+  // Column widths
+  ws['!cols'] = [
+    { wch: 16 }, { wch: 12 }, { wch: 10 }, { wch: 28 },
+    { wch: 18 }, { wch: 8 }, { wch: 30 }, { wch: 14 }
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Zabbix凭证');
+
+  // Add summary sheet
+  const summaryData = [
+    ['Zabbix 凭证迁移报告'],
+    [''],
+    ['导出时间', new Date().toLocaleString('zh-CN')],
+    ['源平台', 'Zabbix 6.0.25'],
+    ['目标平台', 'Tognix v6.4.3'],
+    ['是否迁移凭证', credMigrated ? '是' : '否'],
+    [''],
+    ['凭证统计'],
+    ['类型', '数量'],
+    ...Object.entries(credentialData.reduce((acc, c) => { acc[c.type] = (acc[c.type] || 0) + 1; return acc; }, {})).map(([k, v]) => [k, v])
+  ];
+  const ws2 = XLSX.utils.aoa_to_sheet(summaryData);
+  ws2['!cols'] = [{ wch: 20 }, { wch: 15 }];
+  XLSX.utils.book_append_sheet(wb, ws2, '迁移报告');
+
+  XLSX.writeFile(wb, `Zabbix凭证导出_${new Date().toISOString().slice(0,10)}.xlsx`);
+
+  document.getElementById('cred-download-done').style.display = 'inline';
+  showToast('凭证 Excel 已下载', 'success');
+}
+</script>
+
+</body>
+</html>

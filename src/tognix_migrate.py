@@ -88,7 +88,14 @@ class TognixMigrate:
             error_msg = data["error"].get("message", str(data["error"]))
             return {"success": False, "error": error_msg}
 
-        result = data["result"]
+        result = data.get("result")
+        if result is None:
+            return {"success": False, "error": "No result returned"}
+
+        # Tognix 可能返回错误格式: {'code': 1007, 'message': '设备扫描失败'}
+        if isinstance(result, dict) and "code" in result:
+            return {"success": False, "error": result.get("message", result.get("data", "Unknown error"))}
+
         # result 可能是数组 ["1012"] 或对象
         hostid = result[0] if isinstance(result, list) else result.get("hostid", result)
 
