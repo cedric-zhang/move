@@ -1,6 +1,6 @@
 """
 Tognix-Move — Zabbix -> Tognix Migration Tool
-Phase 4: Remote host.createhost API Migration
+Phase 7 Fix3: 凭证导入 + Playwright 自动化 + host.createhost API
 """
 import sys
 from pathlib import Path
@@ -21,14 +21,14 @@ from io import BytesIO
 
 from src.config import APP_CONFIG
 from src.zabbix_client import ZabbixClient
-from src.tognix_auth import TognixAuth
 from src.tognix_migrate import TognixMigrate
+from src.tognix_browser import get_token_sync, create_host_sync
+from src.credential_importer import import_credentials
 from src.credential_extractor import CredentialExtractor
 from src.excel_exporter import ExcelExporter
 
-app = FastAPI(title="Tognix-Move", version="0.2.0")
+app = FastAPI(title="Tognix-Move", version="0.4.0")
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -39,8 +39,8 @@ app.add_middleware(
 
 @app.get("/api/health")
 def health():
-    """Health check"""
-    return {"status": "ok", "version": "0.2.0"}
+    """健康检查"""
+    return {"status": "ok", "version": "0.4.0"}
 
 
 # === Zabbix Source ===
@@ -53,10 +53,10 @@ class ZabbixConnectRequest(BaseModel):
 
 @app.post("/api/zabbix/connect")
 def zabbix_connect(req: ZabbixConnectRequest):
-    """Test Zabbix source connection"""
+    """测试 Zabbix 源连接"""
     client = ZabbixClient(req.url)
     if not client.login(req.username, req.password):
-        return {"success": False, "error": "Login failed"}
+        return {"success": False, "error": "登录失败"}
     try:
         stats = client.get_stats()
         return {"success": True, **stats}
@@ -72,10 +72,10 @@ class ZabbixPreviewRequest(BaseModel):
 
 @app.post("/api/zabbix/preview")
 def zabbix_preview(req: ZabbixPreviewRequest):
-    """Get Zabbix source host preview"""
+    """获取 Zabbix 源主机预览"""
     client = ZabbixClient(req.url)
     if not client.login(req.username, req.password):
-        return {"success": False, "error": "Login failed"}
+        return {"success": False, "error": "登录失败"}
     try:
         hosts = client.get_hosts()
         preview = []
@@ -102,30 +102,20 @@ def zabbix_preview(req: ZabbixPreviewRequest):
         return {"success": False, "error": str(e)}
 
 
-# === Credential Export (Phase 5) ===
+# === Credential Export ===
 
 @app.get("/api/credentials/export")
-def export_credentials(
-    zabbix_url: str,
-    zabbix_username: str,
-    zabbix_password: str
-):
-    """
-    Export Zabbix credentials to Excel file.
-    Returns xlsx file download.
-    """
+def export_credentials(zabbix_url: str, zabbix_username: str, zabbix_password: str):
+    """导出 Zabbix 凭证到 Excel"""
     client = ZabbixClient(zabbix_url)
     if not client.login(zabbix_username, zabbix_password):
-        return {"success": False, "error": "Zabbix login failed"}
-
+        return {"success": False, "error": "Zabbix 登录失败"}
     try:
         extractor = CredentialExtractor(client)
         credentials = extractor.extract_all()
         summary = extractor.get_summary_by_type(credentials)
-
         exporter = ExcelExporter(credentials, summary)
         excel_bytes = exporter.generate()
-
         return StreamingResponse(
             BytesIO(excel_bytes),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -135,97 +125,128 @@ def export_credentials(
         return {"success": False, "error": str(e)}
 
 
-# === Tognix Target (Phase 4 API) ===
+# === Credential Import (Tognix) ===
+
+class CredentialImportRequest(BaseModel):
+    zabbix_url: str
+    zabbix_username: str
+    zabbix_password: str
+
+
+@app.post("/api/credentials/import")
+def credentials_import(req: CredentialImportRequest):
+    """
+    从 Zabbix 提取 SNMP 团体名，导入到 Tognix
+
+    返回: {"团体名": "凭证ID"} 映射
+    """
+    client = ZabbixClient(req.zabbix_url)
+    if not client.login(req.zabbix_username, req.zabbix_password):
+        return {"success": False, "error": "Zabbix 登录失败"}
+
+    try:
+        # 提取主机列表获取 SNMP 团体名
+        hosts = client.get_hosts()
+        communities = set()
+
+        for h in hosts:
+            for iface in h.get("interfaces", []):
+                if iface.get("type") == "2":  # SNMP
+                    for m in h.get("macros", []):
+                        if "SNMP_COMMUNITY" in m.get("macro", ""):
+                            communities.add(m.get("value", "public"))
+                    break
+
+        # 默认添加 public
+        communities.add("public")
+
+        # 导入到 Tognix
+        credential_map = import_credentials(list(communities))
+
+        return {
+            "success": True,
+            "credential_map": credential_map,
+            "communities_found": list(communities),
+            "imported_count": len(credential_map),
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# === Tognix Target ===
 
 class TognixConnectRequest(BaseModel):
     url: str
-    username: str = ""
-    password: str = ""
-    token: str = ""  # zops-token, optional
+    token: str = ""  # 可选，不提供则自动获取
 
 
 @app.post("/api/tognix/connect")
 def tognix_connect(req: TognixConnectRequest):
-    """Test Tognix target connection and return metadata"""
-    # Prefer zops-token over username/password
-    if req.token:
-        token = req.token
-    else:
-        auth = TognixAuth(req.url)
-        try:
-            token = auth.login(req.username, req.password)
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
+    """连接 Tognix（自动获取 token）"""
+    token = req.token if req.token else get_token_sync()
     migrate = TognixMigrate(req.url, token)
-    hosts = migrate.get_hosts()
-    groups = migrate.get_hostgroups()
-    creds = migrate.get_credentials()
+    try:
+        hosts = migrate.get_hosts()
+        groups = migrate.get_hostgroups()
+        creds = migrate.get_credentials()
+        return {
+            "success": True,
+            "token": token,
+            "hosts": hosts,
+            "host_groups": groups,
+            "credentials": creds,
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
-    return {
-        "success": True,
-        "token": token,
-        "hosts": hosts,
-        "host_groups": groups,
-        "credentials": creds,
-        "total_hosts": len(hosts),
-        "total_groups": len(groups),
-        "total_credentials": len(creds),
-    }
+
+# === Playwright Auto Login ===
+
+@app.post("/api/tognix/auto-login")
+def tognix_auto_login():
+    """Playwright 自动登录获取 zops-token"""
+    try:
+        token = get_token_sync()
+        return {"success": True, "token": token, "message": "自动登录成功"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
-# === Migration (Phase 4 API) ===
+# === Migration ===
+
+def get_groupid_for_type(interface_type: str, groups: List[Dict]) -> str:
+    """根据接口类型选择主机组"""
+    if interface_type == "2":  # SNMP
+        for g in groups:
+            if "网络" in g.get("name", ""):
+                return g["groupid"]
+        return "1"
+    else:
+        for g in groups:
+            if "服务器" in g.get("name", ""):
+                return g["groupid"]
+        return "3"
+
 
 class MigratePreviewRequest(BaseModel):
     zabbix_url: str
     zabbix_username: str
     zabbix_password: str
     tognix_url: str
-    tognix_username: str
-    tognix_password: str
-
-
-def get_groupid_for_type(interface_type: str, groups: List[Dict]) -> str:
-    """Select hostgroup based on interface type"""
-    # SNMP (type=2) -> network devices
-    # Agent (type=1) -> servers
-    if interface_type == "2":
-        for g in groups:
-            if "network" in g.get("name", "").lower() or "网络" in g.get("name", ""):
-                return g["groupid"]
-        return "1"  # default network group
-    else:
-        for g in groups:
-            if "server" in g.get("name", "").lower() or "服务器" in g.get("name", ""):
-                return g["groupid"]
-        return "3"  # default server group
-
-
-def get_credentialid_for_community(community: str, creds: List[Dict]) -> Optional[str]:
-    """Find credential ID matching SNMP community"""
-    for c in creds:
-        if c.get("community", "") == community or c.get("name", "") == community:
-            return c.get("credentialid", c.get("id"))
-    # Default to first credential if no match
-    if creds:
-        return creds[0].get("credentialid", creds[0].get("id"))
-    return "102"  # fallback
 
 
 @app.post("/api/migrate/preview")
 def migrate_preview(req: MigratePreviewRequest):
-    """Migration preview with target mapping"""
-    # Connect Zabbix
+    """迁移预览"""
     zbx_client = ZabbixClient(req.zabbix_url)
     if not zbx_client.login(req.zabbix_username, req.zabbix_password):
-        return {"success": False, "error": "Zabbix login failed"}
+        return {"success": False, "error": "Zabbix 登录失败"}
 
-    # Connect Tognix
-    tog_auth = TognixAuth(req.tognix_url)
+    # 自动获取 token
     try:
-        token = tog_auth.login(req.tognix_username, req.tognix_password)
+        token = get_token_sync()
     except Exception as e:
-        return {"success": False, "error": f"Tognix login failed: {e}"}
+        return {"success": False, "error": f"Tognix 自动登录失败: {e}"}
 
     migrate = TognixMigrate(req.tognix_url, token)
 
@@ -235,9 +256,6 @@ def migrate_preview(req: MigratePreviewRequest):
         tog_creds = migrate.get_credentials()
 
         hosts = []
-        snmp_count = 0
-        agent_count = 0
-
         for h in zbx_hosts:
             main_iface = {}
             for iface in h.get("interfaces", []):
@@ -248,7 +266,6 @@ def migrate_preview(req: MigratePreviewRequest):
             ip = main_iface.get("ip", "")
             iface_type = main_iface.get("type", "1")
 
-            # Get SNMP community if SNMP type
             snmp_community = None
             if iface_type == "2":
                 for m in h.get("macros", []):
@@ -259,43 +276,27 @@ def migrate_preview(req: MigratePreviewRequest):
                     snmp_community = "public"
 
             groupid = get_groupid_for_type(iface_type, tog_groups)
-            credentialid = get_credentialid_for_community(snmp_community or "", tog_creds) if iface_type == "2" else None
 
             templates = [t["host"] for t in h.get("parentTemplates", [])]
             src_tpl = templates[0] if templates else ""
 
-            is_snmp = iface_type == "2"
-            host_info = {
+            hosts.append({
                 "hostid": h["hostid"],
                 "host": h["host"],
                 "name": h["name"],
                 "ip": ip,
-                "type": "snmp" if is_snmp else "agent",
+                "type": "snmp" if iface_type == "2" else "agent",
                 "snmp_community": snmp_community,
                 "src_template": src_tpl,
                 "target_groupid": groupid,
-                "target_credentialid": credentialid,
-                "migrate_method": "host.createhost",
-                "supported": is_snmp,
-                "support_note": None if is_snmp else "当前版本仅支持 SNMP 网络设备迁移",
-            }
-            hosts.append(host_info)
-
-            if iface_type == "2":
-                snmp_count += 1
-            else:
-                agent_count += 1
+                "supported": iface_type == "2",  # 仅 SNMP 支持
+            })
 
         return {
             "success": True,
             "hosts": hosts,
             "tognix_groups": tog_groups,
             "tognix_credentials": tog_creds,
-            "summary": {
-                "total": len(hosts),
-                "snmp": snmp_count,
-                "agent": agent_count,
-            }
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -303,111 +304,75 @@ def migrate_preview(req: MigratePreviewRequest):
 
 class MigrateExecuteRequest(BaseModel):
     tognix_url: str
-    tognix_username: str = ""
-    tognix_password: str = ""
-    tognix_token: str = ""  # zops-token, prefer over username/password
     selected_hosts: List[Dict[str, Any]]
-    migrate_credentials: bool = True
+    credential_map: Dict[str, str] = {}  # {"团体名": "凭证ID"} 映射
 
 
 @app.post("/api/migrate/execute")
 def migrate_execute(req: MigrateExecuteRequest):
-    """Execute migration via host.createhost API"""
-    # Connect Tognix - prefer zops-token over username/password
-    if req.tognix_token:
-        # 直接使用 zops-token（浏览器登录产生的 token 可以调用 host.createhost）
-        token = req.tognix_token
-    else:
-        # fallback 到 user.login（但这个 token 只能读不能写）
-        tog_auth = TognixAuth(req.tognix_url)
-        try:
-            token = tog_auth.login(req.tognix_username, req.tognix_password)
-        except Exception as e:
-            return {"success": False, "error": f"Tognix login failed: {e}"}
-
-    migrate = TognixMigrate(req.tognix_url, token)
-
+    """执行迁移（Playwright 自动登录 + host.createhost）"""
     results = []
     success_count = 0
     failed_count = 0
-    skipped_count = 0
 
     for host_info in req.selected_hosts:
         hostid = host_info.get("hostid")
         ip = host_info.get("ip")
         host_type = host_info.get("type", "agent")
-        credentialid = host_info.get("credentialid")
-        groupid = host_info.get("groupid", "3")
+        groupid = host_info.get("groupid", "1")
         name = host_info.get("name", ip)
+        snmp_community = host_info.get("snmp_community", "public")
 
-        # Skip Agent hosts - SNMP only supported
         if host_type != "snmp":
             results.append({
-                "hostid": hostid,
-                "name": name,
-                "ip": ip,
-                "success": False,
-                "skipped": True,
-                "reason": "Agent 监控当前版本不支持",
+                "hostid": hostid, "name": name, "ip": ip,
+                "success": False, "error": "仅支持 SNMP 设备",
             })
-            skipped_count += 1
+            failed_count += 1
+            continue
+
+        # 从 credential_map 获取凭证 ID
+        cred_id = req.credential_map.get(snmp_community, "")
+        if not cred_id:
+            results.append({
+                "hostid": hostid, "name": name, "ip": ip,
+                "success": False, "error": f"未找到凭证: {snmp_community}",
+            })
+            failed_count += 1
             continue
 
         try:
-            # Prepare credentials array
-            credentials = []
-            if host_type == "snmp" and credentialid:
-                credentials = [credentialid]
-
-            # Call host.createhost
-            result = migrate.create_host(
+            # 使用 Playwright + host.createhost
+            result = create_host_sync(
                 ip=ip,
-                credentials=credentials,
+                credentials=[cred_id],
                 hostgroupid=groupid,
-                status="0",
+                status="0"
             )
 
             if result["success"]:
                 results.append({
-                    "hostid": hostid,
-                    "name": name,
-                    "ip": ip,
-                    "success": True,
-                    "tognix_hostid": result["hostid"],
+                    "hostid": hostid, "name": name, "ip": ip,
+                    "success": True, "tognix_hostid": result["hostid"],
                 })
                 success_count += 1
             else:
                 results.append({
-                    "hostid": hostid,
-                    "name": name,
-                    "ip": ip,
-                    "success": False,
-                    "error": result.get("error", "Unknown error"),
+                    "hostid": hostid, "name": name, "ip": ip,
+                    "success": False, "error": result.get("error", "未知错误"),
                 })
                 failed_count += 1
 
-            # Wait 3s between hosts (avoid SNMP scan conflicts)
-            time.sleep(3)
+            time.sleep(3)  # SNMP 扫描耗时，等待间隔
 
         except Exception as e:
-            results.append({
-                "hostid": hostid,
-                "name": name,
-                "ip": ip,
-                "success": False,
-                "error": str(e),
-            })
+            results.append({"hostid": hostid, "name": name, "ip": ip, "success": False, "error": str(e)})
             failed_count += 1
 
     return {
         "success": True,
         "results": results,
-        "summary": {
-            "success": success_count,
-            "failed": failed_count,
-            "skipped": skipped_count,
-            "total": len(req.selected_hosts),
-        }
+        "summary": {"success": success_count, "failed": failed_count, "total": len(req.selected_hosts)}
     }
 
 
@@ -420,7 +385,7 @@ def index():
     index_file = static_dir / "index.html"
     if index_file.exists():
         return FileResponse(str(index_file))
-    return {"message": "Tognix-Move API", "version": "0.2.0"}
+    return {"message": "Tognix-Move API"}
 
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
