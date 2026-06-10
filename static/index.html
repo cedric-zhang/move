@@ -753,9 +753,8 @@ async function testTarget() {
   status.innerHTML = '';
 
   const url = document.getElementById('dst-url').value;
-  // 用户名密码已废弃，Playwright 自动登录
-  const user = '';
-  const pass = '';
+  const user = document.getElementById('dst-user')?.value || '';
+  const pass = document.getElementById('dst-pass')?.value || '';
   const token = "";  // token 由后端 Playwright 自动获取
 
   try {
