@@ -383,10 +383,6 @@ select.form-input option {
         <div class="step" id="step4">
           <div class="step-num">4</div> 导入并迁移
         </div>
-        <div class="step-line" id="line4"></div>
-        <div class="step" id="step5">
-          <div class="step-num">5</div> 完成
-        </div>
       </div>
 
 
@@ -594,38 +590,25 @@ select.form-input option {
         </div>
       </div>
 
-      <!-- Completion (hidden initially) -->
-      
-    <!-- Step 5: 完成 -->
-    <div class="card fade-enter hidden" id="step5-panel">
-      <div class="card-header">
-        <div class="card-title">迁移完成</div>
-        <div class="card-desc">主机已成功迁移到 Tognix 平台。</div>
-      </div>
-      <div class="completion">
-        <div class="completion-icon">✅</div>
-        <div class="completion-title">迁移完成</div>
-        <div class="completion-desc" id="completion-desc">成功迁移到 Tognix 平台。请登录 Tognix 确认监控数据。</div>
-        <!-- 失败原因展示区域 -->
-        <div id="fail-reasons-box" style="display:none;margin:24px auto;padding:24px;background:linear-gradient(135deg,rgba(239,68,68,0.12),rgba(239,68,68,0.06));border:2px solid rgba(239,68,68,0.4);border-radius:16px;max-width:700px;width:90%;text-align:left;box-shadow:0 4px 24px rgba(239,68,68,0.15);">
-          <div id="fail-header" style="font-size:17px;font-weight:700;color:#ef4444;margin-bottom:20px;display:flex;align-items:center;gap:10px;padding-bottom:12px;border-bottom:1px solid rgba(239,68,68,0.2);">
-            <span style="font-size:18px;">⚠️</span> 失败原因详情
-          </div>
-          <div id="fail-reasons-list" style="font-size:15px;color:var(--text-primary);line-height:2.0;"></div>
+      <!-- 迁移结果展示区域 -->
+      <div id="migration-result-section" style="display:none;margin-top:32px;padding:24px;background:var(--bg-surface);border-radius:16px;border:2px solid var(--border-standard);">
+        <div style="text-align:center;">
+          <div id="result-icon" style="font-size:56px;margin-bottom:16px;">✅</div>
+          <div id="result-title" style="font-size:24px;font-weight:700;color:var(--text-primary);">迁移完成</div>
+          <div id="result-desc" style="font-size:18px;color:var(--text-secondary);margin-top:8px;">成功迁移到 Tognix 平台</div>
         </div>
-        <div style="margin-top:20px;display:flex;gap:12px;justify-content:center;">
+        <div id="result-fail-box" style="display:none;margin:24px 0;padding:20px;background:rgba(239,68,68,0.08);border:2px solid rgba(239,68,68,0.3);border-radius:12px;">
+          <div id="result-fail-header" style="font-size:18px;font-weight:700;color:#ef4444;margin-bottom:16px;">❌ 失败原因详情</div>
+          <div id="result-fail-list" style="font-size:15px;color:var(--text-primary);line-height:2;"></div>
+        </div>
+        <div style="margin-top:28px;display:flex;gap:16px;justify-content:center;flex-wrap:wrap;">
           <a href="https://192.168.31.128" target="_blank" class="btn btn-primary">打开 Tognix 平台 →</a>
           <button class="btn btn-secondary" onclick="downloadCredentialsExcel()">📥 导出凭证清单</button>
-        </div>
-        <div style="margin-top:16px;">
           <button class="btn btn-ghost" onclick="goStep1()">🔄 重新开始</button>
         </div>
       </div>
     </div>
 
-  </div>
-</div>
-</div>
 
 <script>
 // State
@@ -845,7 +828,7 @@ let credentialMap = {};  // 凭证映射表
 function setStepUI(step) {
   currentStep = step;
   // 处理 5 个步骤指示器
-  ['step1','step2','step3','step4','step5'].forEach((s,i) => {
+  ['step1','step2','step3','step4'].forEach((s,i) => {
     const panel = document.getElementById(s+'-panel');
     const indicator = document.getElementById(s);  // 直接用 s，不带 -indicator 后缀
     if (panel) {
@@ -858,7 +841,7 @@ function setStepUI(step) {
     }
   });
   // 处理 4 条连接线
-  ['line1','line2','line3','line4'].forEach((l,i) => {
+  ['line1','line2','line3'].forEach((l,i) => {
     const line = document.getElementById(l);
     if (line) {
       line.classList.remove('active');
@@ -943,12 +926,14 @@ async function loadHostPreview() {
       let snmpCount = 0;
       data.hosts.forEach(h => {
         const isSNMP = h.type === 'snmp' || h.interface_type === '2';
-        // 从 macros 数组提取 SNMP 团体名
+        // 从 macros 数组提取 SNMP 团体名，无宏时默认 public
         let community = h.snmp_community || '';
         if (!community && h.macros) {
           const m = h.macros.find(item => item.macro === '{$SNMP_COMMUNITY}');
           if (m) community = m.value;
         }
+        // 无团体名时默认 public（允许迁移）
+        if (!community && isSNMP) community = 'public';
         if (isSNMP && community) snmpCount++;
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -1007,11 +992,26 @@ async function importAndMigrate() {
   });
 
   if (communities.size === 0) {
+    // 收集选中的主机作为失败结果
+    const failedHosts = [];
+    document.querySelectorAll('.host-select-cb:checked').forEach(cb => {
+      const tr = cb.closest('tr');
+      const nameCell = tr ? tr.querySelector('td:nth-child(2)') : null;
+      failedHosts.push({
+        name: nameCell ? nameCell.textContent.trim() : cb.dataset.ip,
+        ip: cb.dataset.ip,
+        error: '未找到 SNMP 团体名（Zabbix 中未配置 {$SNMP_COMMUNITY} 宏）'
+      });
+    });
+
+    // 填充迁移结果并跳到 Step5
+    migrationResults = { success: [], failed: failedHosts };
     showToast('未找到 SNMP 团体名', 'error');
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = '🚀 开始迁移';
     }
+    showMigrationResult();
     return;
   }
 
@@ -1072,7 +1072,7 @@ async function importAndMigrate() {
       } else {
         showToast(`迁移完成: 成功 ${totalSuccess} 台`, 'success');
       }
-      goStep5();
+      showMigrationResult();
     } else {
       showToast('迁移失败: ' + migrateData.error, 'error');
       if (btn) {
@@ -1089,25 +1089,24 @@ async function importAndMigrate() {
   }
 }
 
-function goStep5() {
-  setStepUI(5);
-  document.getElementById('progress-section').classList.add('hidden');
-
-  const icon = document.querySelector('.completion-icon');
-  const title = document.querySelector('.completion-title');
-  const desc = document.getElementById('completion-desc');
-  const failBox = document.getElementById('fail-reasons-box');
-  const failList = document.getElementById('fail-reasons-list');
-  const failHeader = document.getElementById('fail-header');
+function showMigrationResult() {
+  // 在 Step4 底部显示迁移结果，不跳转页面
+  const resultSection = document.getElementById('migration-result-section');
+  const resultIcon = document.getElementById('result-icon');
+  const resultTitle = document.getElementById('result-title');
+  const resultDesc = document.getElementById('result-desc');
+  const failBox = document.getElementById('result-fail-box');
+  const failList = document.getElementById('result-fail-list');
+  const failHeader = document.getElementById('result-fail-header');
 
   const totalSuccess = migrationResults.success.length;
   const totalFailed = migrationResults.failed.length;
 
   if (totalFailed > 0 && totalSuccess > 0) {
     // 部分成功
-    if (icon) icon.textContent = '⚠️';
-    if (title) title.textContent = '迁移部分失败';
-    if (desc) desc.innerHTML = '<span style="color:var(--warning);font-size:18px;">成功 ' + totalSuccess + ' 台，失败 ' + totalFailed + ' 台</span>';
+    resultIcon.textContent = '⚠️';
+    resultTitle.textContent = '迁移部分失败';
+    resultDesc.innerHTML = '<span style="color:var(--warning);font-size:18px;">成功 ' + totalSuccess + ' 台，失败 ' + totalFailed + ' 台</span>';
 
     failBox.style.display = 'block';
     failBox.style.background = 'linear-gradient(135deg,rgba(245,158,11,0.12),rgba(245,158,11,0.06))';
@@ -1126,9 +1125,9 @@ function goStep5() {
     }).join('');
   } else if (totalFailed > 0) {
     // 全部失败
-    if (icon) icon.textContent = '❌';
-    if (title) title.textContent = '迁移失败';
-    if (desc) desc.innerHTML = '<span style="color:#ef4444;font-size:18px;">全部迁移失败 (' + totalFailed + ' 台)</span>';
+    resultIcon.textContent = '❌';
+    resultTitle.textContent = '迁移失败';
+    resultDesc.innerHTML = '<span style="color:#ef4444;font-size:18px;">全部迁移失败 (' + totalFailed + ' 台)</span>';
 
     failBox.style.display = 'block';
     failBox.style.background = 'linear-gradient(135deg,rgba(239,68,68,0.12),rgba(239,68,68,0.06))';
@@ -1145,13 +1144,32 @@ function goStep5() {
         '<span style="color:#ef4444;">错误: ' + (r.error || '未知错误') + '</span>' +
         '</div></div>';
     }).join('');
+  } else if (totalSuccess === 0 && totalFailed === 0) {
+    // 未执行迁移（兜底）
+    resultIcon.textContent = '⚠️';
+    resultTitle.textContent = '未执行迁移';
+    resultDesc.innerHTML = '<span style="color:var(--warning);font-size:18px;">没有主机被迁移</span>';
+    failBox.style.display = 'block';
+    failBox.style.background = 'linear-gradient(135deg,rgba(245,158,11,0.12),rgba(245,158,11,0.06))';
+    failBox.style.borderColor = 'rgba(245,158,11,0.4)';
+    failBox.style.borderWidth = '2px';
+    failHeader.innerHTML = '<span style="font-size:20px;">⚠️</span> 提示';
+    failHeader.style.color = '#f59e0b';
+    failList.innerHTML = '<div style="padding:14px;color:var(--text-secondary);">请返回 Step3 选择要迁移的主机。</div>';
   } else {
     // 全部成功
-    if (icon) icon.textContent = '✅';
-    if (title) title.textContent = '迁移完成';
-    if (desc) desc.innerHTML = '<span style="color:var(--success);font-size:18px;">成功迁移 ' + totalSuccess + ' 台主机！</span>';
+    resultIcon.textContent = '✅';
+    resultTitle.textContent = '迁移完成';
+    resultDesc.innerHTML = '<span style="color:var(--success);font-size:18px;">成功迁移 ' + totalSuccess + ' 台主机！</span>';
     failBox.style.display = 'none';
   }
+
+  // 显示结果区域（所有情况都要显示）
+  resultSection.style.display = 'block';
+
+  // 隐藏进度条
+  const progressSection = document.getElementById('progress-section');
+  if (progressSection) progressSection.classList.add('hidden');
 }
 
 async function importCredentials() {
@@ -1410,61 +1428,12 @@ async function startMigration() {
       document.getElementById('progress-pct').textContent = '100%';
       document.getElementById('progress-bar').style.width = '100%';
 
-      // 迁移完成后进入 Step5
-      setTimeout(() => {
-        setStepUI(5);
-        document.getElementById('progress-section').classList.add('hidden');
-
-        // 更新 Step5 图标、标题和描述
-        const iconEl = document.querySelector('.completion-icon');
-        const titleEl = document.querySelector('.completion-title');
-        const descEl = document.getElementById('completion-desc');
-
-        // 收集失败原因
-        let failReasons = [];
-        results.forEach(r => {
-          if (!r.success && r.error) {
-            failReasons.push(r.name + ' (' + r.ip + '): ' + r.error);
-          }
-        });
-
-        const failBox = document.getElementById('fail-reasons-box');
-        const failList = document.getElementById('fail-reasons-list');
-
-        if (done > 0 && fail === 0) {
-          // 全部成功
-          iconEl.textContent = '✅';
-          titleEl.textContent = '迁移完成';
-          descEl.innerHTML = '<span style="color:var(--success);font-size:18px;">成功迁移 ' + done + ' 台主机！</span>';
-          failBox.style.display = 'none';
-        } else if (done > 0 && fail > 0) {
-          // 部分成功
-          iconEl.textContent = '⚠️';
-          titleEl.textContent = '部分成功';
-          descEl.innerHTML = '<span style="color:var(--warning);font-size:18px;">成功 ' + done + ' 台，失败 ' + fail + ' 台</span>';
-          failBox.style.display = 'block';
-          failBox.style.background = 'linear-gradient(135deg,rgba(245,158,11,0.12),rgba(245,158,11,0.06))';
-          failBox.style.borderColor = 'rgba(245,158,11,0.4)';
-          failBox.style.borderWidth = '2px';
-          document.getElementById('fail-header').innerHTML = '<span style="font-size:20px;">⚠️</span> 失败原因详情';
-          document.getElementById('fail-header').style.color = '#f59e0b';
-          failList.innerHTML = failReasons.map(r => '<div style="padding:12px 0;border-bottom:1px solid rgba(245,158,11,0.2);font-size:15px;">' + r + '</div>').join('');
-        } else {
-          // 全部失败
-          iconEl.textContent = '❌';
-          titleEl.textContent = '迁移失败';
-          descEl.innerHTML = '<span style="color:#ef4444;font-size:18px;">全部迁移失败</span>';
-          failBox.style.display = 'block';
-          failBox.style.background = 'linear-gradient(135deg,rgba(239,68,68,0.12),rgba(239,68,68,0.06))';
-          failBox.style.borderColor = 'rgba(239,68,68,0.4)';
-          failBox.style.borderWidth = '2px';
-          document.getElementById('fail-header').innerHTML = '<span style="font-size:20px;">❌</span> 失败原因详情';
-          document.getElementById('fail-header').style.color = '#ef4444';
-          failList.innerHTML = failReasons.map(r => '<div style="padding:12px 0;border-bottom:1px solid rgba(239,68,68,0.2);font-size:15px;">' + r + '</div>').join('');
-        }
-
-        showToast(done > 0 ? '迁移完成！' : '迁移失败', done > 0 ? 'success' : 'error');
-      }, 500);
+      // 迁移完成后在 Step4 底部展示结果
+      migrationResults = {
+        success: results.filter(r => r.success && !r.skipped),
+        failed: results.filter(r => !r.success)
+      };
+      showMigrationResult();
     } else {
       addLog(`迁移失败: ${data.error}`, 'error');
       showToast('迁移失败', 'error');
