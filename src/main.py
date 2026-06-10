@@ -131,6 +131,7 @@ class CredentialImportRequest(BaseModel):
     zabbix_url: str
     zabbix_username: str
     zabbix_password: str
+    communities: List[str] = []  # 可选：只导入指定团体名
 
 
 @app.post("/api/credentials/import")
@@ -145,20 +146,24 @@ def credentials_import(req: CredentialImportRequest):
         return {"success": False, "error": "Zabbix 登录失败"}
 
     try:
-        # 提取主机列表获取 SNMP 团体名
-        hosts = client.get_hosts()
-        communities = set()
+        # 如果指定了 communities，直接使用；否则从 Zabbix 提取
+        if req.communities:
+            communities = set(req.communities)
+        else:
+            # 提取主机列表获取 SNMP 团体名
+            hosts = client.get_hosts()
+            communities = set()
 
-        for h in hosts:
-            for iface in h.get("interfaces", []):
-                if iface.get("type") == "2":  # SNMP
-                    for m in h.get("macros", []):
-                        if "SNMP_COMMUNITY" in m.get("macro", ""):
-                            communities.add(m.get("value", "public"))
-                    break
+            for h in hosts:
+                for iface in h.get("interfaces", []):
+                    if iface.get("type") == "2":  # SNMP
+                        for m in h.get("macros", []):
+                            if "SNMP_COMMUNITY" in m.get("macro", ""):
+                                communities.add(m.get("value", "public"))
+                        break
 
-        # 默认添加 public
-        communities.add("public")
+            # 默认添加 public
+            communities.add("public")
 
         # 导入到 Tognix
         credential_map = import_credentials(list(communities))
@@ -177,13 +182,19 @@ def credentials_import(req: CredentialImportRequest):
 
 class TognixConnectRequest(BaseModel):
     url: str
-    token: str = ""  # 可选，不提供则自动获取
+    username: str = "Admin"  # Playwright 登录用户名
+    password: str = ""       # Playwright 登录密码
+    token: str = ""          # 可选，不提供则自动获取
 
 
 @app.post("/api/tognix/connect")
 def tognix_connect(req: TognixConnectRequest):
     """连接 Tognix（自动获取 token）"""
-    token = req.token if req.token else get_token_sync()
+    if req.token:
+        token = req.token
+    else:
+        # 传递用户名密码给 Playwright
+        token = get_token_sync(username=req.username, password=req.password)
     migrate = TognixMigrate(req.url, token)
     try:
         hosts = migrate.get_hosts()

@@ -452,12 +452,18 @@ select.form-input option {
             <input class="form-input" placeholder="https://192.168.31.128:1618/api_jsonrpc.php" value="https://192.168.31.128:1618/api_jsonrpc.php" id="dst-url">
             <span class="form-hint">Tognix API 地址（HTTPS 端口 1618）</span>
           </div>
-
-
-          <div class="form-group form-full">
-            <label class="form-label">认证方式</label>
-            <div style="color: var(--success); font-size: 14px; padding: 8px 0;">✓ Playwright 自动登录</div>
-            <span class="form-hint">后端自动通过 Playwright 浏览器登录 Tognix Web UI 获取认证令牌，无需手动填写账号密码</span>
+          <div class="form-group">
+            <label class="form-label">用户名</label>
+            <input class="form-input" placeholder="Admin" id="dst-user" value="">
+            <span class="form-hint">Tognix 登录用户名（如 Admin）</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">密码</label>
+            <div class="form-input-wrap">
+              <input class="form-input" type="password" placeholder="••••••••" id="dst-pass">
+              <button class="pwd-toggle" onclick="togglePwd('dst-pass', this)" title="显示密码">👁</button>
+            </div>
+            <span class="form-hint">Tognix 登录密码，Playwright 自动登录需要</span>
           </div>
           <div class="form-group" style="justify-content: flex-end;">
             <button class="btn btn-test" onclick="testTarget()" id="btn-test-dst">
@@ -939,13 +945,15 @@ async function importAndMigrate() {
 
   // 1. 导入凭证
   try {
+    // Bug 0: 只传选中的团体名，不导全部
     const credResp = await fetch('/api/credentials/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         zabbix_url: document.getElementById('src-url').value,
         zabbix_username: document.getElementById('src-user').value,
-        zabbix_password: document.getElementById('src-pass').value
+        zabbix_password: document.getElementById('src-pass').value,
+        communities: Array.from(communities)  // 只传选中主机的团体名
       })
     });
     const credData = await credResp.json();
