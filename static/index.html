@@ -14,7 +14,7 @@
   --text-primary: #f7f8f8;
   --text-secondary: #d0d6e0;
   --text-tertiary: #8a8f98;
-  --text-muted: #62666d;
+  --text-muted: #8a8f98;
   --brand: #5e6ad2;
   --brand-bright: #7170ff;
   --brand-hover: #828fff;
@@ -58,7 +58,7 @@ body {
 .logo-text { font-size: 15px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.2px; }
 .logo-sub { font-size: 12px; color: var(--text-muted); font-weight: 400; }
 .header-badge {
-  font-size: 11px; font-weight: 500; color: var(--text-muted);
+  font-size: 13px; font-weight: 500; color: var(--text-secondary);
   background: var(--bg-elevated); padding: 4px 10px;
   border-radius: 99px; border: 1px solid var(--border-subtle);
 }
@@ -99,13 +99,13 @@ body {
 }
 .card-header { margin-bottom: 28px; }
 .card-title { font-size: 20px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.24px; margin-bottom: 6px; }
-.card-desc { font-size: 14px; color: var(--text-tertiary); }
+.card-desc { font-size: 15px; color: var(--text-tertiary); }
 
 /* Form */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .form-full { grid-column: 1 / -1; }
 .form-group { display: flex; flex-direction: column; gap: 6px; }
-.form-label { font-size: 12px; font-weight: 500; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; }
+.form-label { font-size: 13px; font-weight: 500; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; }
 .form-input {
   background: rgba(255,255,255,0.03);
   border: 1px solid var(--border-standard);
@@ -130,7 +130,7 @@ select.form-input option {
 }
 .form-input:focus { border-color: var(--brand-bright); box-shadow: 0 0 0 3px rgba(94,106,210,0.15); }
 .form-input::placeholder { color: var(--text-muted); }
-.form-hint { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.form-hint { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 .form-input-wrap { position: relative; }
 .form-input-wrap .form-input { width: 100%; padding-right: 40px; }
 
@@ -210,7 +210,7 @@ select.form-input option {
 }
 .log-entry { display: flex; gap: 10px; }
 .log-time { color: var(--text-muted); flex-shrink: 0; }
-.log-msg { color: var(--text-secondary); }
+.log-msg { font-size: 13px; color: var(--text-secondary); }
 .log-msg.success { color: var(--success); }
 .log-msg.warning { color: var(--warning); }
 .log-msg.error { color: var(--error); }
@@ -227,7 +227,7 @@ select.form-input option {
   text-transform: uppercase; letter-spacing: 0.5px;
   border-bottom: 1px solid var(--border-subtle);
 }
-.mapping-table td {
+.mapping-table td { font-size: 14px;
   padding: 12px 14px; color: var(--text-secondary);
   border-bottom: 1px solid rgba(255,255,255,0.03);
 }
@@ -411,8 +411,12 @@ select.form-input option {
         </div>
         <div class="form-group">
           <label class="form-label" id="src-url-label">API 地址</label>
-          <input class="form-input" placeholder="http://192.168.31.35/zabbix/api_jsonrpc.php" value="http://192.168.31.35/zabbix/api_jsonrpc.php" id="src-url">
+          <input class="form-input" placeholder="http://192.168.31.35/zabbix/api_jsonrpc.php" value="" id="src-url">
           <span class="form-hint" id="src-url-hint">Zabbix 前端地址 + /api_jsonrpc.php</span>
+          <div class="url-example" style="margin-top:4px;font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:8px;">
+            <span style="color:var(--text-muted);">示例:</span>
+            <code class="url-example-code" style="background:var(--bg-elevated);padding:4px 8px;border-radius:4px;font-family:monospace;cursor:pointer;" onclick="copyToClipboard(this.textContent)" title="点击复制">http://192.168.31.35/zabbix/api_jsonrpc.php</code>
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">用户名</label>
@@ -449,8 +453,12 @@ select.form-input option {
         <div class="form-grid">
           <div class="form-group">
             <label class="form-label">Tognix API 地址</label>
-            <input class="form-input" placeholder="https://192.168.31.128:1618/api_jsonrpc.php" value="https://192.168.31.128:1618/api_jsonrpc.php" id="dst-url">
+            <input class="form-input" placeholder="https://192.168.31.128:1618/api_jsonrpc.php" value="" id="dst-url">
             <span class="form-hint">Tognix API 地址（HTTPS 端口 1618）</span>
+            <div class="url-example" style="margin-top:4px;font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:8px;">
+              <span style="color:var(--text-muted);">示例:</span>
+              <code class="url-example-code" style="background:var(--bg-elevated);padding:4px 8px;border-radius:4px;font-family:monospace;cursor:pointer;" onclick="copyToClipboard(this.textContent)" title="点击复制">https://192.168.31.128:1618/api_jsonrpc.php</code>
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">用户名</label>
@@ -546,17 +554,7 @@ select.form-input option {
         </tbody>
       </table>
 
-      <!-- Credential Migration Toggle -->
-      <div class="toggle-row" style="margin-top:16px;margin-bottom:16px;">
-        <div class="toggle-info">
-          <span class="toggle-label">🔐 同时迁移 SNMP 凭证到 Tognix</span>
-          <span class="toggle-desc" id="cred-desc">凭证将在迁移完成后自动同步到 Tognix 凭证库。</span>
-        </div>
-        <label class="toggle-switch">
-          <input type="checkbox" id="cred-toggle" checked onchange="onCredToggle()">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
+
 
       <div class="form-actions" style="justify-content: space-between; align-items: center;">
         <div style="display:flex;align-items:center;gap:8px;">
@@ -684,6 +682,20 @@ function updateSelectedCount() {
   if (el) el.textContent = `已选 ${selected} 台`;
   const btn = document.getElementById('btn-start');
   if (btn && !migrating) btn.disabled = selected === 0;
+}
+
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    showToast("已复制: " + text, "success");
+  }).catch(() => {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
+    showToast("已复制", "success");
+  });
 }
 
 function showToast(msg, type) {
@@ -843,13 +855,36 @@ async function goStep3() {
 }
 async function goStep4() {
   setStepUI(4);
-  // 不自动调用，等待用户点击"开始迁移"按钮
+
+  // 在 Step4 显示 Step3 选中的设备列表
+  const previewBody = document.getElementById('preview-body');
+  if (previewBody) {
+    previewBody.innerHTML = '';
+    document.querySelectorAll('.host-select-cb:checked').forEach(cb => {
+      const hostid = cb.dataset.hostid;
+      const ip = cb.dataset.ip;
+      const name = cb.dataset.name || ip;
+      const community = cb.dataset.community || 'public';
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td><input type="checkbox" class="preview-cb" checked style="accent-color:var(--brand);width:14px;height:14px;"></td>' +
+        '<td>' + name + '</td>' +
+        '<td>' + ip + '</td>' +
+        '<td style="color:var(--success);">SNMP</td>' +
+        '<td style="color:var(--brand-bright);">' + community + '</td>' +
+        '<td style="color:var(--text-muted);">待迁移</td>';
+      previewBody.appendChild(tr);
+    });
+  }
+
   // 初始化按钮状态
   const selected = document.querySelectorAll('.host-select-cb:checked').length;
   const btn = document.getElementById('btn-start');
-  if (btn) {
-    btn.disabled = selected === 0;
-  }
+  if (btn) btn.disabled = selected === 0;
+
+  // 更新已选数量显示
+  const countEl = document.getElementById('selected-count');
+  if (countEl) countEl.textContent = '已选 ' + selected + ' 台';
 }
 
 
@@ -1273,14 +1308,19 @@ async function startMigration() {
       document.getElementById('progress-pct').textContent = '100%';
       document.getElementById('progress-bar').style.width = '100%';
 
-      // 显示完成 - 全部失败时提示
+      // 迁移完成后进入 Step5
       setTimeout(() => {
+        setStepUI(5);
         document.getElementById('progress-section').classList.add('hidden');
-        document.getElementById('completion-section').classList.remove('hidden');
-        document.getElementById('completion-section').classList.add('fade-enter');
-        let desc = `成功迁移 ${done} 台主机，${fail} 台失败，${skipped} 台跳过。`;
-        if (done === 0 && fail > 0) {
-          desc = `❌ 全部迁移失败！请检查 Tognix 连接和凭证配置`;
+
+        // 更新 Step5 完成描述
+        let desc = '';
+        if (done > 0 && fail === 0) {
+          desc = '成功迁移 ' + done + ' 台主机到 Tognix！请登录 Tognix 确认监控数据。';
+        } else if (done > 0 && fail > 0) {
+          desc = '迁移完成：成功 ' + done + ' 台，失败 ' + fail + ' 台。请查看上方日志了解失败原因。';
+        } else {
+          desc = '全部迁移失败！请检查错误信息并修正后重试。';
         }
         document.getElementById('completion-desc').textContent = desc;
         showToast(done > 0 ? '迁移完成！' : '迁移失败', done > 0 ? 'success' : 'error');

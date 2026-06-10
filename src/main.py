@@ -22,7 +22,9 @@ from io import BytesIO
 from src.config import APP_CONFIG
 from src.zabbix_client import ZabbixClient
 from src.tognix_migrate import TognixMigrate
-from src.tognix_browser import get_token_sync, create_host_sync
+from src.tognix_browser import get_token_sync
+from src.token_cache import set_token, get_cached_token
+from src.tognix_api import create_host_direct
 from src.credential_importer import import_credentials
 from src.credential_extractor import CredentialExtractor
 from src.excel_exporter import ExcelExporter
@@ -189,12 +191,20 @@ class TognixConnectRequest(BaseModel):
 
 @app.post("/api/tognix/connect")
 def tognix_connect(req: TognixConnectRequest):
-    """连接 Tognix（自动获取 token）"""
-    if req.token:
-        token = req.token
-    else:
-        # 传递用户名密码给 Playwright
-        token = get_token_sync(username=req.username, password=req.password)
+    """连接 Tognix（测试连接必须验证用户密码，不使用缓存）"""
+    # 测试连接时必须用用户输入的账号密码验证
+    try:
+        if req.token:
+            token = req.token
+        else:
+            token = get_token_sync(username=req.username, password=req.password)
+        if not token:
+            return {"success": False, "error": "登录失败：账号或密码错误"}
+    except Exception as e:
+        return {"success": False, "error": f"登录失败：{str(e)}"}
+
+    # 验证成功后才缓存token（供后续迁移使用）
+    set_token(token)
     migrate = TognixMigrate(req.url, token)
     try:
         hosts = migrate.get_hosts()
@@ -317,14 +327,26 @@ class MigrateExecuteRequest(BaseModel):
     tognix_url: str
     selected_hosts: List[Dict[str, Any]]
     credential_map: Dict[str, str] = {}  # {"团体名": "凭证ID"} 映射
+    username: str = "Admin"  # Tognix 登录用户名
+    password: str = ""       # Tognix 登录密码
 
 
 @app.post("/api/migrate/execute")
 def migrate_execute(req: MigrateExecuteRequest):
-    """执行迁移（Playwright 自动登录 + host.createhost）"""
+    """执行迁移（Playwright 自动登录 + 直接 API 调用）"""
     results = []
     success_count = 0
     failed_count = 0
+    
+    # 优先使用缓存的token
+    token = get_cached_token()
+    if not token:
+        try:
+            token = get_token_sync(username=req.username, password=req.password)
+            if token:
+                set_token(token)
+        except Exception as e:
+            return {"success": False, "error": f"Playwright 登录失败: {str(e)}"}
 
     for host_info in req.selected_hosts:
         hostid = host_info.get("hostid")
@@ -353,8 +375,9 @@ def migrate_execute(req: MigrateExecuteRequest):
             continue
 
         try:
-            # 使用 Playwright + host.createhost
-            result = create_host_sync(
+            # 使用直接 API 调用（不依赖浏览器内 fetch）
+            result = create_host_direct(
+                token=token,
                 ip=ip,
                 credentials=[cred_id],
                 hostgroupid=groupid,
