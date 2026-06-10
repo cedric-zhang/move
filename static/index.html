@@ -477,7 +477,34 @@ select.form-input option {
         <button class="btn btn-primary" onclick="goStep3()" id="btn-next2" disabled>下一步 → 导入凭证</button>
       </div>
     </div>
-<!-- Step 3: 凭证导入 -->    <div class="card fade-enter hidden" id="step3-panel">      <div class="card-header">        <div class="card-title">导入 SNMP 凭证</div>        <div class="card-desc">从 Zabbix 提取 SNMP 团体名，自动在 Tognix 创建对应凭证。</div>      </div>      <div style="padding: 16px 0;">        <button class="btn btn-primary" onclick="importCredentials()" id="btn-import-cred">          📥 导入凭证        </button>        <span id="cred-import-status" style="margin-left:12px;font-size:13px;color:var(--text-muted);">点击按钮从 Zabbix 提取 SNMP 团体名</span>      </div>      <div id="cred-import-result" class="hidden" style="margin-top:12px;padding:16px;background:var(--bg-surface);border-radius:8px;border:1px solid var(--border-subtle);">        <div style="font-size:14px;color:var(--success);margin-bottom:8px;">✓ 凭证导入成功</div>        <div id="cred-count" style="font-size:13px;color:var(--text-secondary);"></div>        <div style="font-size:13px;color:var(--text-tertiary);margin-top:8px;">映射表：</div>        <div id="cred-map" style="margin-top:8px;font-size:12px;color:var(--text-muted);"></div>      </div>      <div class="form-actions">        <button class="btn btn-ghost" onclick="goStep2()">← 上一步</button>        <button class="btn btn-primary" onclick="goStep4()" id="btn-next3" disabled>下一步 → 预览迁移</button>      </div>    </div>
+<!-- Step 3: 凭证导入 -->
+    <div class="card fade-enter hidden" id="step3-panel">
+      <div class="card-header">
+        <div class="card-title">导入 SNMP 凭证</div>
+        <div class="card-desc">从 Zabbix 提取 SNMP 团体名，自动在 Tognix 创建对应凭证。</div>
+      </div>
+
+      <div style="padding: 16px 0;">
+        <button class="btn btn-primary" onclick="importCredentials()" id="btn-import-cred">
+          📥 导入凭证
+        </button>
+        <span id="cred-import-status" style="margin-left:12px;font-size:13px;color:var(--text-muted);">点击按钮从 Zabbix 提取 SNMP 团体名</span>
+      </div>
+
+      <div id="cred-import-result" class="hidden" style="margin-top:12px;padding:16px;background:var(--bg-surface);border-radius:8px;border:1px solid var(--border-subtle);">
+        <div style="font-size:14px;color:var(--success);margin-bottom:12px;">✓ 凭证导入成功</div>
+        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">凭证映射表：</div>
+        <table class="mapping-table">
+          <thead><tr><th>Zabbix 团体名</th><th>Tognix 凭证 ID</th></tr></thead>
+          <tbody id="cred-import-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="goStep2()">← 上一步</button>
+        <button class="btn btn-primary" onclick="goStep4()" id="btn-next3" disabled>下一步 → 预览迁移</button>
+      </div>
+    </div>
 
     <!-- Step 3: Migration -->
     <div class="card fade-enter hidden" id="step4-panel">
@@ -798,8 +825,7 @@ async function importCredentials() {
   const btn = document.getElementById('btn-import-cred');
   const status = document.getElementById('cred-import-status');
   const result = document.getElementById('cred-import-result');
-  const countDiv = document.getElementById('cred-count');
-  const mapDiv = document.getElementById('cred-map');
+  const tbody = document.getElementById('cred-import-tbody');
   const btnNext = document.getElementById('btn-next3');
   
   btn.disabled = true;
@@ -828,14 +854,16 @@ async function importCredentials() {
       
       status.textContent = '凭证导入完成';
       result.classList.remove('hidden');
-      countDiv.textContent = '已导入 ' + count + ' 个凭证';
+      status.textContent = '已导入 ' + count + ' 个凭证';
       
-      // 显示映射表
-      let mapHtml = '';
+      // 显示映射表（填充 tbody）
+      // tbody 已在函数顶部声明
+      tbody.innerHTML = '';
       for (const [name, id] of Object.entries(credentialMap)) {
-        mapHtml += '<span style="margin-right: 16px;">' + name + ' → ' + id + '</span>';
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + name + '</td><td>' + id + '</td>';
+        tbody.appendChild(tr);
       }
-      mapDiv.innerHTML = mapHtml;
       
       btn.innerHTML = '✓ 已导入';
       btnNext.disabled = false;
