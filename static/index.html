@@ -477,6 +477,7 @@ select.form-input option {
         <button class="btn btn-primary" onclick="goStep3()" id="btn-next2" disabled>下一步 → 导入凭证</button>
       </div>
     </div>
+<!-- Step 3: 凭证导入 -->    <div class="card fade-enter hidden" id="step3-panel">      <div class="card-header">        <div class="card-title">导入 SNMP 凭证</div>        <div class="card-desc">从 Zabbix 提取 SNMP 团体名，自动在 Tognix 创建对应凭证。</div>      </div>      <div style="padding: 16px 0;">        <button class="btn btn-primary" onclick="importCredentials()" id="btn-import-cred">          📥 导入凭证        </button>        <span id="cred-import-status" style="margin-left:12px;font-size:13px;color:var(--text-muted);">点击按钮从 Zabbix 提取 SNMP 团体名</span>      </div>      <div id="cred-import-result" class="hidden" style="margin-top:12px;padding:16px;background:var(--bg-surface);border-radius:8px;border:1px solid var(--border-subtle);">        <div style="font-size:14px;color:var(--success);margin-bottom:8px;">✓ 凭证导入成功</div>        <div id="cred-count" style="font-size:13px;color:var(--text-secondary);"></div>        <div style="font-size:13px;color:var(--text-tertiary);margin-top:8px;">映射表：</div>        <div id="cred-map" style="margin-top:8px;font-size:12px;color:var(--text-muted);"></div>      </div>      <div class="form-actions">        <button class="btn btn-ghost" onclick="goStep2()">← 上一步</button>        <button class="btn btn-primary" onclick="goStep4()" id="btn-next3" disabled>下一步 → 预览迁移</button>      </div>    </div>
 
     <!-- Step 3: Migration -->
     <div class="card fade-enter hidden" id="step4-panel">
@@ -733,7 +734,7 @@ async function testTarget() {
       btn.style.color = 'var(--success)';
       btn.style.borderColor = 'var(--success)';
       const hostCount = data.total_hosts || data.hosts?.length || 0;
-      const tokenHint = token ? '✓ 已配置 zops-token，可执行迁移' : '⚠️ 请填写 zops-token 才能迁移';
+      const tokenHint = token ? '✓ Playwright 自动登录已就绪' : '⚠️ 请先导入凭证才能迁移';
       status.innerHTML = `<span class="status-dot ok"></span><span class="status-msg ok">连接成功 — Tognix 平台已就绪, ${hostCount} 台主机。${tokenHint}</span>`;
       document.getElementById('btn-next2').disabled = false;
       showToast('目标 Tognix 连接成功', 'success');
@@ -794,9 +795,9 @@ async function goStep4() {
 }
 
 async function importCredentials() {
-  const btn = document.getElementById('btn-import-creds');
-  const status = document.getElementById('cred-status');
-  const result = document.getElementById('cred-result');
+  const btn = document.getElementById('btn-import-cred');
+  const status = document.getElementById('cred-import-status');
+  const result = document.getElementById('cred-import-result');
   const countDiv = document.getElementById('cred-count');
   const mapDiv = document.getElementById('cred-map');
   const btnNext = document.getElementById('btn-next3');
@@ -1016,14 +1017,14 @@ async function startMigration() {
       document.getElementById('progress-pct').textContent = '100%';
       document.getElementById('progress-bar').style.width = '100%';
 
-      // 显示完成 - 全部失败时提示检查 zops-token
+      // 显示完成 - 全部失败时提示
       setTimeout(() => {
         document.getElementById('progress-section').classList.add('hidden');
         document.getElementById('completion-section').classList.remove('hidden');
         document.getElementById('completion-section').classList.add('fade-enter');
         let desc = `成功迁移 ${done} 台主机，${fail} 台失败，${skipped} 台跳过。`;
         if (done === 0 && fail > 0) {
-          desc = `❌ 全部迁移失败！请检查 zops-token 是否正确（浏览器 F12 → Application → Local Storage → zops-token）`;
+          desc = `❌ 全部迁移失败！请检查 Tognix 连接和凭证配置`;
         }
         document.getElementById('completion-desc').textContent = desc;
         showToast(done > 0 ? '迁移完成！' : '迁移失败', done > 0 ? 'success' : 'error');
