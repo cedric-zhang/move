@@ -843,8 +843,13 @@ async function goStep3() {
 }
 async function goStep4() {
   setStepUI(4);
-  // 执行凭证导入+迁移
-  await importAndMigrate();
+  // 不自动调用，等待用户点击"开始迁移"按钮
+  // 初始化按钮状态
+  const selected = document.querySelectorAll('.host-select-cb:checked').length;
+  const btn = document.getElementById('btn-start');
+  if (btn) {
+    btn.disabled = selected === 0;
+  }
 }
 
 
@@ -1168,20 +1173,24 @@ async function startMigration() {
   document.getElementById('progress-section').classList.remove('hidden');
   document.getElementById('progress-section').classList.add('fade-enter');
 
-  // 收集选中的主机
+  // 从 Step3 的 host-select-cb 收集选中的主机
   const selectedHosts = [];
-  previewHosts.forEach((h, i) => {
-    const cb = document.querySelector(`.host-select-cb[data-idx="${i}"]`);
-    if (cb && cb.checked && h.type === 'snmp') {
-      selectedHosts.push({
-        hostid: h.hostid,
-        name: h.name || h.host,
-        ip: h.ip,
-        type: h.type,
-        credentialid: h.target_credentialid || '102',
-        groupid: h.target_groupid || '1'
-      });
-    }
+  const communities = new Set();
+  document.querySelectorAll('.host-select-cb:checked').forEach(cb => {
+    const hostid = cb.dataset.hostid;
+    const ip = cb.dataset.ip;
+    const community = cb.dataset.community;
+    const name = cb.dataset.name || ip;
+    const groupid = cb.dataset.groupid || '1';
+    if (community) communities.add(community);
+    selectedHosts.push({
+      hostid: hostid,
+      ip: ip,
+      type: 'snmp',
+      name: name,
+      snmp_community: community,
+      groupid: groupid
+    });
   });
 
   const total = selectedHosts.length;
@@ -1200,7 +1209,35 @@ async function startMigration() {
 
   const tognixUrl = document.getElementById('dst-url').value;
 
+  // 先导入凭证（只导入选中主机的团体名）
+  addLog(`导入凭证: ${Array.from(communities).join(', ')}`, 'info');
+
   try {
+    // 1. 导入凭证
+    const credResp = await fetch('/api/credentials/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        zabbix_url: document.getElementById('src-url').value,
+        zabbix_username: document.getElementById('src-user').value,
+        zabbix_password: document.getElementById('src-pass').value,
+        communities: Array.from(communities)  // 只传选中的团体名
+      })
+    });
+    const credData = await credResp.json();
+
+    if (!credData.success) {
+      addLog(`凭证导入失败: ${credData.error}`, 'error');
+      migrating = false;
+      document.getElementById('btn-start').disabled = false;
+      document.getElementById('btn-start').innerHTML = '🚀 开始迁移';
+      return;
+    }
+
+    credentialMap = credData.credential_map || {};
+    addLog(`已导入 ${credData.imported_count} 个凭证`, 'success');
+
+    // 2. 执行迁移
     const resp = await fetch('/api/migrate/execute', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
