@@ -743,7 +743,7 @@ async function testTarget() {
   const url = document.getElementById('dst-url').value;
   const user = document.getElementById('dst-user').value;
   const pass = document.getElementById('dst-pass').value;
-  const token = document.getElementById('dst-token').value;
+  const token = "";  // token 由后端 Playwright 自动获取
 
   try {
     const resp = await fetch('/api/tognix/connect', {
@@ -761,7 +761,7 @@ async function testTarget() {
       btn.style.color = 'var(--success)';
       btn.style.borderColor = 'var(--success)';
       const hostCount = data.total_hosts || data.hosts?.length || 0;
-      const tokenHint = token ? '✓ Playwright 自动登录已就绪' : '⚠️ 请先导入凭证才能迁移';
+      const tokenHint = "✓ Playwright 自动登录已就绪";
       status.innerHTML = `<span class="status-dot ok"></span><span class="status-msg ok">连接成功 — Tognix 平台已就绪, ${hostCount} 台主机。${tokenHint}</span>`;
       document.getElementById('btn-next2').disabled = false;
       showToast('目标 Tognix 连接成功', 'success');
