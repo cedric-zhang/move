@@ -1,44 +1,43 @@
-"""通过 Playwright 浏览器自动化获取 zops-token 并调用 host.createhost"""
+"""通过 Playwright 浏览器自动化获取 Tognix zops-token 并调用 host.createhost"""
 import asyncio
 import json
 from playwright.async_api import async_playwright
 
-TOGNIX_URL = "http://192.168.31.128"
-API_URL = "http://192.168.31.128/api_jsonrpc.php?lang=zh_CN"
+# Vue 前端用于登录获取 zops-token (port 443)
+TOGNIX_URL = "https://192.168.31.128"
+# API 调用端口 1618
+API_URL = "https://192.168.31.128:1618/api_jsonrpc.php?lang=zh_CN"
 
 
-async def login_and_wait(page, username: str, password: str):
-    """登录并等待 zops-token 出现"""
-    await page.fill('input[placeholder*="账号"]', username)
-    await page.fill('input[placeholder*="密码"]', password)
-    await page.click('button:has-text("登录")')
-    await page.wait_for_function(
-        "() => localStorage.getItem('zops-token')",
-        timeout=15000
-    )
+async def login_vue(page, username: str, password: str):
+    """登录 Vue 前端（端口 443）"""
+    await page.fill("input[placeholder*=\"账号\"]", username)
+    await page.fill("input[placeholder*=\"密码\"]", password)
+    await page.click("button:has-text(\"登录\")")
+    await page.wait_for_function("() => localStorage.getItem(\"zops-token\")", timeout=15000)
 
 
 async def get_zops_token(username: str = "Admin", password: str = "baizeyao") -> str:
-    """启动 headless 浏览器，登录 Tognix Web UI，返回 zops-token"""
+    """启动 headless 浏览器，登录 Vue 前端，返回 zops-token"""
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox']
+            args=["--no-sandbox", "--disable-setuid-sandbox"]
         )
         context = await browser.new_context(ignore_https_errors=True)
         page = await context.new_page()
 
         await page.goto(TOGNIX_URL, wait_until="networkidle", timeout=30000)
-        await login_and_wait(page, username, password)
+        await login_vue(page, username, password)
 
-        token = await page.evaluate("() => localStorage.getItem('zops-token')")
+        token = await page.evaluate("() => localStorage.getItem(\"zops-token\")")
         await browser.close()
         return token
 
 
 async def create_host_via_browser(
     ip: str,
-    credentials: list,  # 必填，由调用方从 credential_map 获取
+    credentials: list,
     hostgroupid: str = "1",
     status: str = "0",
     username: str = "Admin",
@@ -48,30 +47,31 @@ async def create_host_via_browser(
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox']
+            args=["--no-sandbox", "--disable-setuid-sandbox"]
         )
         context = await browser.new_context(ignore_https_errors=True)
         page = await context.new_page()
 
         await page.goto(TOGNIX_URL, wait_until="networkidle", timeout=30000)
-        await login_and_wait(page, username, password)
+        await login_vue(page, username, password)
+
+        token = await page.evaluate("() => localStorage.getItem(\"zops-token\")")
 
         result_text = await page.evaluate("""
-            async ([ip, creds, groupid, stat]) => {
-                const token = localStorage.getItem('zops-token');
-                const resp = await fetch('http://192.168.31.128/api_jsonrpc.php?lang=zh_CN', {
-                    method: 'POST',
+            async ([ip, creds, groupid, stat, tok]) => {
+                const resp = await fetch(\"https://192.168.31.128:1618/api_jsonrpc.php?lang=zh_CN\", {
+                    method: \"POST\",
                     headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer ' + token
+                        \"Content-Type\": \"application/json\",
+                        \"Authorization\": \"Bearer \" + tok
                     },
                     body: JSON.stringify({
-                        jsonrpc: '2.0',
-                        method: 'host.createhost',
+                        jsonrpc: \"2.0\",
+                        method: \"host.createhost\",
                         params: [{
                             ip: ip,
                             status: stat,
-                            proxy_hostid: '',
+                            proxy_hostid: \"\",
                             credentials: creds,
                             hostgroupid: groupid,
                             houseid: 0,
@@ -82,7 +82,7 @@ async def create_host_via_browser(
                 });
                 return await resp.text();
             }
-        """, [ip, credentials, hostgroupid, status])
+        """, [ip, credentials, hostgroupid, status, token])
 
         await browser.close()
 
@@ -108,7 +108,7 @@ def get_token_sync(username: str = "Admin", password: str = "baizeyao") -> str:
 
 def create_host_sync(
     ip: str,
-    credentials: list,  # 必填，由调用方从 credential_map 获取
+    credentials: list,
     hostgroupid: str = "1",
     status: str = "0",
     username: str = "Admin",

@@ -5,7 +5,7 @@ from src.tognix_browser import get_token_sync
 
 urllib3.disable_warnings()
 
-TOGNIX_API_URL = "http://192.168.31.128/api_jsonrpc.php"
+TOGNIX_API_URL = "https://192.168.31.128:1618/api_jsonrpc.php"
 
 
 def import_credentials(communities: list) -> dict:
@@ -26,7 +26,7 @@ def import_credentials(communities: list) -> dict:
         "method": "credentials.get",
         "params": {"output": ["id", "name", "type"]},
         "id": 1
-    }, headers=headers, timeout=30)
+    }, headers=headers, timeout=30, verify=False)
     
     existing = {}
     for c in resp.json().get("result", []):
@@ -54,7 +54,7 @@ def import_credentials(communities: list) -> dict:
                 "description": f"Imported from Zabbix, community: {community}"
             },
             "id": 1
-        }, headers=headers, timeout=30)
+        }, headers=headers, timeout=30, verify=False)
         
         data = resp.json()
         if "result" in data and "ids" in data["result"]:
