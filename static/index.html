@@ -856,14 +856,20 @@ async function loadHostPreview() {
       let snmpCount = 0;
       data.hosts.forEach(h => {
         const isSNMP = h.type === 'snmp' || h.interface_type === '2';
-        if (isSNMP) snmpCount++;
+        // 从 macros 数组提取 SNMP 团体名
+        let community = h.snmp_community || '';
+        if (!community && h.macros) {
+          const m = h.macros.find(item => item.macro === '{$SNMP_COMMUNITY}');
+          if (m) community = m.value;
+        }
+        if (isSNMP && community) snmpCount++;
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td><input type="checkbox" class="host-select-cb" data-hostid="${h.hostid}" data-ip="${h.ip}" data-community="${h.snmp_community || ''}" ${isSNMP ? 'checked' : 'disabled'} style="accent-color:var(--brand);width:14px;height:14px;"></td>
+          <td><input type="checkbox" class="host-select-cb" data-hostid="${h.hostid}" data-ip="${h.ip}" data-community="${community}" data-name="${h.name || h.host}" data-groupid="${h.target_groupid || '1'}" ${isSNMP ? 'checked' : 'disabled'} style="accent-color:var(--brand);width:14px;height:14px;"></td>
           <td style="color:${isSNMP ? 'var(--text-primary)' : 'var(--text-muted)'}">${h.name || h.host}</td>
           <td>${h.ip}</td>
           <td style="color:${isSNMP ? 'var(--success)' : 'var(--text-muted)'}">${isSNMP ? 'SNMP' : 'Agent'}</td>
-          <td style="font-size:12px;color:var(--brand-bright);">${h.snmp_community || '<span style="color:var(--text-muted)">-</span>'}</td>
+          <td style="font-size:12px;color:${community ? 'var(--brand-bright)' : 'var(--text-muted)'};">${community || '-'}</td>
         `;
         tbody.appendChild(tr);
       });
@@ -900,8 +906,17 @@ async function importAndMigrate() {
     const hostid = cb.dataset.hostid;
     const ip = cb.dataset.ip;
     const community = cb.dataset.community;
+    const name = cb.dataset.name || ip;
+    const groupid = cb.dataset.groupid || '1';
     if (community) communities.add(community);
-    selectedHosts.push({ hostid, ip, community });
+    selectedHosts.push({
+      hostid: hostid,
+      ip: ip,
+      type: 'snmp',
+      name: name,
+      snmp_community: community,
+      groupid: groupid
+    });
   });
 
   if (communities.size === 0) {
