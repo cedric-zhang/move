@@ -794,9 +794,10 @@ let credentialMap = {};  // 凭证映射表
 
 function setStepUI(step) {
   currentStep = step;
-  ['step1','step2','step3','step4'].forEach((s,i) => {
+  // 处理 5 个步骤指示器
+  ['step1','step2','step3','step4','step5'].forEach((s,i) => {
     const panel = document.getElementById(s+'-panel');
-    const indicator = document.getElementById(s+'-indicator');
+    const indicator = document.getElementById(s);  // 直接用 s，不带 -indicator 后缀
     if (panel) {
       panel.classList.add('hidden');
     }
@@ -804,6 +805,14 @@ function setStepUI(step) {
       indicator.classList.remove('active','done');
       if (i+1 < step) indicator.classList.add('done');
       if (i+1 === step) indicator.classList.add('active');
+    }
+  });
+  // 处理 4 条连接线
+  ['line1','line2','line3','line4'].forEach((l,i) => {
+    const line = document.getElementById(l);
+    if (line) {
+      line.classList.remove('active');
+      if (i+1 < step) line.classList.add('active');
     }
   });
   const currentPanel = document.getElementById('step'+step+'-panel');
