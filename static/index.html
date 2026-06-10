@@ -415,7 +415,8 @@ select.form-input option {
           <span class="form-hint" id="src-url-hint">Zabbix 前端地址 + /api_jsonrpc.php</span>
           <div class="url-example" style="margin-top:4px;font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:8px;">
             <span style="color:var(--text-muted);">示例:</span>
-            <code class="url-example-code" style="background:var(--bg-elevated);padding:4px 8px;border-radius:4px;font-family:monospace;cursor:pointer;" onclick="copyToClipboard(this.textContent)" title="点击复制">http://192.168.31.35/zabbix/api_jsonrpc.php</code>
+            <code style="background:var(--bg-elevated);padding:4px 8px;border-radius:4px;font-family:monospace;">http://192.168.31.35/zabbix/api_jsonrpc.php</code>
+            <button onclick="copyToClipboard('http://192.168.31.35/zabbix/api_jsonrpc.php', this)" class="copy-btn" style="background:var(--bg-elevated);border:1px solid var(--border-standard);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;color:var(--text-secondary);transition:all 0.2s;" title="复制示例URL">📋 复制</button>
           </div>
         </div>
         <div class="form-group">
@@ -457,7 +458,8 @@ select.form-input option {
             <span class="form-hint">Tognix API 地址（HTTPS 端口 1618）</span>
             <div class="url-example" style="margin-top:4px;font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:8px;">
               <span style="color:var(--text-muted);">示例:</span>
-              <code class="url-example-code" style="background:var(--bg-elevated);padding:4px 8px;border-radius:4px;font-family:monospace;cursor:pointer;" onclick="copyToClipboard(this.textContent)" title="点击复制">https://192.168.31.128:1618/api_jsonrpc.php</code>
+              <code style="background:var(--bg-elevated);padding:4px 8px;border-radius:4px;font-family:monospace;">https://192.168.31.128:1618/api_jsonrpc.php</code>
+              <button onclick="copyToClipboard('https://192.168.31.128:1618/api_jsonrpc.php', this)" class="copy-btn" style="background:var(--bg-elevated);border:1px solid var(--border-standard);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;color:var(--text-secondary);transition:all 0.2s;" title="复制示例URL">📋 复制</button>
             </div>
           </div>
           <div class="form-group">
@@ -604,6 +606,13 @@ select.form-input option {
         <div class="completion-icon">✅</div>
         <div class="completion-title">迁移完成</div>
         <div class="completion-desc" id="completion-desc">成功迁移到 Tognix 平台。请登录 Tognix 确认监控数据。</div>
+        <!-- 失败原因展示区域 -->
+        <div id="fail-reasons-box" style="display:none;margin:24px auto;padding:24px;background:linear-gradient(135deg,rgba(239,68,68,0.12),rgba(239,68,68,0.06));border:2px solid rgba(239,68,68,0.4);border-radius:16px;max-width:700px;width:90%;text-align:left;box-shadow:0 4px 24px rgba(239,68,68,0.15);">
+          <div id="fail-header" style="font-size:17px;font-weight:700;color:#ef4444;margin-bottom:20px;display:flex;align-items:center;gap:10px;padding-bottom:12px;border-bottom:1px solid rgba(239,68,68,0.2);">
+            <span style="font-size:18px;">⚠️</span> 失败原因详情
+          </div>
+          <div id="fail-reasons-list" style="font-size:15px;color:var(--text-primary);line-height:2.0;"></div>
+        </div>
         <div style="margin-top:20px;display:flex;gap:12px;justify-content:center;">
           <a href="https://192.168.31.128" target="_blank" class="btn btn-primary">打开 Tognix 平台 →</a>
           <button class="btn btn-secondary" onclick="downloadCredentialsExcel()">📥 导出凭证清单</button>
@@ -621,6 +630,8 @@ select.form-input option {
 <script>
 // State
 let currentStep = 1;
+let migrationResults = { success: [], failed: [] };  // 保存迁移结果
+
 let srcOk = false, dstOk = false;
 let migrating = false;
 let previewHosts = [];  // 从 API 获取的预览数据
@@ -684,18 +695,40 @@ function updateSelectedCount() {
   if (btn && !migrating) btn.disabled = selected === 0;
 }
 
-function copyToClipboard(text) {
-  navigator.clipboard.writeText(text).then(() => {
-    showToast("已复制: " + text, "success");
-  }).catch(() => {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand("copy");
-    textarea.remove();
-    showToast("已复制", "success");
-  });
+function copyToClipboard(text, btn) {
+  // 使用 textarea 方法，兼容 HTTP 环境
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  try {
+    const success = document.execCommand("copy");
+    if (success) {
+      showToast("已复制示例URL", "success");
+      // 按钮反馈
+      if (btn) {
+        btn.innerHTML = "✓ 已复制";
+        btn.style.color = "var(--success)";
+        btn.style.borderColor = "var(--success)";
+        setTimeout(() => {
+          btn.innerHTML = "📋 复制";
+          btn.style.color = "var(--text-secondary)";
+          btn.style.borderColor = "var(--border-standard)";
+        }, 1500);
+      }
+    } else {
+      showToast("复制失败，请手动复制", "error");
+    }
+  } catch (err) {
+    showToast("复制失败", "error");
+  }
+
+  document.body.removeChild(textarea);
 }
 
 function showToast(msg, type) {
@@ -1023,8 +1056,22 @@ async function importAndMigrate() {
     });
     const migrateData = await migrateResp.json();
 
+    // 保存迁移结果到全局变量
+    if (migrateData.results) {
+      migrationResults = {
+        success: migrateData.results.filter(r => r.success),
+        failed: migrateData.results.filter(r => !r.success)
+      };
+    }
+
     if (migrateData.success) {
-      showToast(`迁移完成: 成功 ${migrateData.summary?.success || 0} 台`, 'success');
+      const totalSuccess = migrationResults.success.length;
+      const totalFailed = migrationResults.failed.length;
+      if (totalFailed > 0) {
+        showToast(`迁移完成: 成功 ${totalSuccess} 台，失败 ${totalFailed} 台`, 'warning');
+      } else {
+        showToast(`迁移完成: 成功 ${totalSuccess} 台`, 'success');
+      }
       goStep5();
     } else {
       showToast('迁移失败: ' + migrateData.error, 'error');
@@ -1044,11 +1091,66 @@ async function importAndMigrate() {
 
 function goStep5() {
   setStepUI(5);
-  // 更新完成页面信息
+  document.getElementById('progress-section').classList.add('hidden');
+
+  const icon = document.querySelector('.completion-icon');
+  const title = document.querySelector('.completion-title');
   const desc = document.getElementById('completion-desc');
-  if (desc) {
-    const success = document.querySelectorAll('.host-select-cb:checked').length;
-    desc.textContent = `成功迁移 ${success} 台主机到 Tognix 平台。请登录 Tognix 确认监控数据。`;
+  const failBox = document.getElementById('fail-reasons-box');
+  const failList = document.getElementById('fail-reasons-list');
+  const failHeader = document.getElementById('fail-header');
+
+  const totalSuccess = migrationResults.success.length;
+  const totalFailed = migrationResults.failed.length;
+
+  if (totalFailed > 0 && totalSuccess > 0) {
+    // 部分成功
+    if (icon) icon.textContent = '⚠️';
+    if (title) title.textContent = '迁移部分失败';
+    if (desc) desc.innerHTML = '<span style="color:var(--warning);font-size:18px;">成功 ' + totalSuccess + ' 台，失败 ' + totalFailed + ' 台</span>';
+
+    failBox.style.display = 'block';
+    failBox.style.background = 'linear-gradient(135deg,rgba(245,158,11,0.12),rgba(245,158,11,0.06))';
+    failBox.style.borderColor = 'rgba(245,158,11,0.4)';
+    failBox.style.borderWidth = '2px';
+    failHeader.innerHTML = '<span style="font-size:20px;">⚠️</span> 失败原因详情';
+    failHeader.style.color = '#f59e0b';
+
+    failList.innerHTML = migrationResults.failed.map(r => {
+      return '<div style="margin-bottom:12px;padding:14px;background:rgba(245,158,11,0.06);border-radius:8px;border:1px solid rgba(245,158,11,0.15);">' +
+        '<div style="font-weight:600;color:var(--text-primary);">⚠️ ' + (r.name || r.ip) + '</div>' +
+        '<div style="font-size:14px;color:var(--text-secondary);margin-top:6px;">' +
+        'IP: ' + r.ip + '<br>' +
+        '<span style="color:#f59e0b;">错误: ' + (r.error || '未知错误') + '</span>' +
+        '</div></div>';
+    }).join('');
+  } else if (totalFailed > 0) {
+    // 全部失败
+    if (icon) icon.textContent = '❌';
+    if (title) title.textContent = '迁移失败';
+    if (desc) desc.innerHTML = '<span style="color:#ef4444;font-size:18px;">全部迁移失败 (' + totalFailed + ' 台)</span>';
+
+    failBox.style.display = 'block';
+    failBox.style.background = 'linear-gradient(135deg,rgba(239,68,68,0.12),rgba(239,68,68,0.06))';
+    failBox.style.borderColor = 'rgba(239,68,68,0.4)';
+    failBox.style.borderWidth = '2px';
+    failHeader.innerHTML = '<span style="font-size:20px;">❌</span> 失败原因详情';
+    failHeader.style.color = '#ef4444';
+
+    failList.innerHTML = migrationResults.failed.map(r => {
+      return '<div style="margin-bottom:12px;padding:14px;background:rgba(239,68,68,0.06);border-radius:8px;border:1px solid rgba(239,68,68,0.15);">' +
+        '<div style="font-weight:600;color:var(--text-primary);">❌ ' + (r.name || r.ip) + '</div>' +
+        '<div style="font-size:14px;color:var(--text-secondary);margin-top:6px;">' +
+        'IP: ' + r.ip + '<br>' +
+        '<span style="color:#ef4444;">错误: ' + (r.error || '未知错误') + '</span>' +
+        '</div></div>';
+    }).join('');
+  } else {
+    // 全部成功
+    if (icon) icon.textContent = '✅';
+    if (title) title.textContent = '迁移完成';
+    if (desc) desc.innerHTML = '<span style="color:var(--success);font-size:18px;">成功迁移 ' + totalSuccess + ' 台主机！</span>';
+    failBox.style.display = 'none';
   }
 }
 
@@ -1313,16 +1415,54 @@ async function startMigration() {
         setStepUI(5);
         document.getElementById('progress-section').classList.add('hidden');
 
-        // 更新 Step5 完成描述
-        let desc = '';
+        // 更新 Step5 图标、标题和描述
+        const iconEl = document.querySelector('.completion-icon');
+        const titleEl = document.querySelector('.completion-title');
+        const descEl = document.getElementById('completion-desc');
+
+        // 收集失败原因
+        let failReasons = [];
+        results.forEach(r => {
+          if (!r.success && r.error) {
+            failReasons.push(r.name + ' (' + r.ip + '): ' + r.error);
+          }
+        });
+
+        const failBox = document.getElementById('fail-reasons-box');
+        const failList = document.getElementById('fail-reasons-list');
+
         if (done > 0 && fail === 0) {
-          desc = '成功迁移 ' + done + ' 台主机到 Tognix！请登录 Tognix 确认监控数据。';
+          // 全部成功
+          iconEl.textContent = '✅';
+          titleEl.textContent = '迁移完成';
+          descEl.innerHTML = '<span style="color:var(--success);font-size:18px;">成功迁移 ' + done + ' 台主机！</span>';
+          failBox.style.display = 'none';
         } else if (done > 0 && fail > 0) {
-          desc = '迁移完成：成功 ' + done + ' 台，失败 ' + fail + ' 台。请查看上方日志了解失败原因。';
+          // 部分成功
+          iconEl.textContent = '⚠️';
+          titleEl.textContent = '部分成功';
+          descEl.innerHTML = '<span style="color:var(--warning);font-size:18px;">成功 ' + done + ' 台，失败 ' + fail + ' 台</span>';
+          failBox.style.display = 'block';
+          failBox.style.background = 'linear-gradient(135deg,rgba(245,158,11,0.12),rgba(245,158,11,0.06))';
+          failBox.style.borderColor = 'rgba(245,158,11,0.4)';
+          failBox.style.borderWidth = '2px';
+          document.getElementById('fail-header').innerHTML = '<span style="font-size:20px;">⚠️</span> 失败原因详情';
+          document.getElementById('fail-header').style.color = '#f59e0b';
+          failList.innerHTML = failReasons.map(r => '<div style="padding:12px 0;border-bottom:1px solid rgba(245,158,11,0.2);font-size:15px;">' + r + '</div>').join('');
         } else {
-          desc = '全部迁移失败！请检查错误信息并修正后重试。';
+          // 全部失败
+          iconEl.textContent = '❌';
+          titleEl.textContent = '迁移失败';
+          descEl.innerHTML = '<span style="color:#ef4444;font-size:18px;">全部迁移失败</span>';
+          failBox.style.display = 'block';
+          failBox.style.background = 'linear-gradient(135deg,rgba(239,68,68,0.12),rgba(239,68,68,0.06))';
+          failBox.style.borderColor = 'rgba(239,68,68,0.4)';
+          failBox.style.borderWidth = '2px';
+          document.getElementById('fail-header').innerHTML = '<span style="font-size:20px;">❌</span> 失败原因详情';
+          document.getElementById('fail-header').style.color = '#ef4444';
+          failList.innerHTML = failReasons.map(r => '<div style="padding:12px 0;border-bottom:1px solid rgba(239,68,68,0.2);font-size:15px;">' + r + '</div>').join('');
         }
-        document.getElementById('completion-desc').textContent = desc;
+
         showToast(done > 0 ? '迁移完成！' : '迁移失败', done > 0 ? 'success' : 'error');
       }, 500);
     } else {

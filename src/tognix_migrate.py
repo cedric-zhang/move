@@ -15,7 +15,7 @@ class TognixMigrate:
 
     def __init__(self, api_url: str, auth_token: str):
         """
-        api_url: http://192.168.31.128/api_jsonrpc.php
+        api_url: https://192.168.31.128:1618/api_jsonrpc.php
         auth_token: Bearer token from browser login
         """
         self.api_url = api_url

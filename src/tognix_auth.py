@@ -14,7 +14,7 @@ class TognixAuth:
 
     def __init__(self, api_url: str):
         """
-        api_url: http://192.168.31.128/api_jsonrpc.php
+        api_url: https://192.168.31.128:1618/api_jsonrpc.php
         """
         self.api_url = api_url
         self.token: Optional[str] = None
