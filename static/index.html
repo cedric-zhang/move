@@ -377,7 +377,11 @@ select.form-input option {
       </div>
       <div class="step-line" id="line2"></div>
       <div class="step" id="step3-indicator">
-        <div class="step-num">3</div> 执行迁移
+        <div class="step-num">3</div> 导入凭证
+      </div>
+      <div class="step-line" id="line3"></div>
+      <div class="step" id="step4-indicator">
+        <div class="step-num">4</div> 执行迁移
       </div>
     </div>
 
@@ -440,8 +444,8 @@ select.form-input option {
         <div class="form-grid">
           <div class="form-group">
             <label class="form-label">Tognix API 地址</label>
-            <input class="form-input" placeholder="http://192.168.31.128/api_jsonrpc.php" value="http://192.168.31.128/api_jsonrpc.php" id="dst-url">
-            <span class="form-hint">Tognix API 地址（端口 80，host.createhost 需用此端口）</span>
+            <input class="form-input" placeholder="https://192.168.31.128:1618/api_jsonrpc.php" value="https://192.168.31.128:1618/api_jsonrpc.php" id="dst-url">
+            <span class="form-hint">Tognix API 地址（HTTPS 端口 1618）</span>
           </div>
           <div class="form-group">
             <label class="form-label">用户名</label>
@@ -455,9 +459,9 @@ select.form-input option {
             </div>
           </div>
           <div class="form-group form-full">
-            <label class="form-label">zops-token（可选，迁移必需）</label>
-            <input class="form-input" placeholder="浏览器 F12 → Application → Local Storage → zops-token" value="" id="dst-token">
-            <span class="form-hint">⚠️ 必填！user.login 的 token 只能读不能写，只有浏览器登录产生的 zops-token 才能调用 host.createhost</span>
+            <label class="form-label">认证方式</label>
+            <div style="color: var(--success); font-size: 14px;">✓ Playwright 自动登录</div>
+            <span class="form-hint">后端已集成 Playwright 自动登录，无需手动填写 token</span>
           </div>
           <div class="form-group" style="justify-content: flex-end;">
             <button class="btn btn-test" onclick="testTarget()" id="btn-test-dst">
@@ -470,12 +474,12 @@ select.form-input option {
       <div id="dst-status" style="margin-top: 12px;"></div>
       <div class="form-actions">
         <button class="btn btn-ghost" onclick="goStep1()">← 上一步</button>
-        <button class="btn btn-primary" onclick="goStep3()" id="btn-next2" disabled>下一步 → 预览迁移</button>
+        <button class="btn btn-primary" onclick="goStep3()" id="btn-next2" disabled>下一步 → 导入凭证</button>
       </div>
     </div>
 
     <!-- Step 3: Migration -->
-    <div class="card fade-enter hidden" id="step3-panel">
+    <div class="card fade-enter hidden" id="step4-panel">
       <div class="card-header">
         <div class="card-title">迁移预览与执行</div>
         <div class="card-desc">以下是将从源 Zabbix 迁移到 Tognix 的监控对象预览。当前版本仅支持 SNMP 网络设备迁移。</div>
@@ -536,7 +540,7 @@ select.form-input option {
           </label>
           <span style="font-size:11px;color:var(--text-muted);" id="selected-count">已选 0 台</span>
         </div>
-        <button class="btn btn-ghost" onclick="goStep2()">← 上一步</button>
+        <button class="btn btn-ghost" onclick="goStep3()">← 上一步</button>
         <button class="btn btn-primary" onclick="startMigration()" id="btn-start">
           🚀 开始迁移
         </button>
@@ -751,29 +755,103 @@ async function testTarget() {
   }
 }
 
+let credentialMap = {};  // 凭证映射表
+
 function setStepUI(step) {
   currentStep = step;
-  ['step1','step2','step3'].forEach((s,i) => {
+  ['step1','step2','step3','step4'].forEach((s,i) => {
     const panel = document.getElementById(s+'-panel');
     const indicator = document.getElementById(s+'-indicator');
-    panel.classList.add('hidden');
-    indicator.classList.remove('active','done');
-    if (i+1 < step) indicator.classList.add('done');
-    if (i+1 === step) indicator.classList.add('active');
+    if (panel) {
+      panel.classList.add('hidden');
+    }
+    if (indicator) {
+      indicator.classList.remove('active','done');
+      if (i+1 < step) indicator.classList.add('done');
+      if (i+1 === step) indicator.classList.add('active');
+    }
   });
-  document.getElementById('step'+step+'-panel').classList.remove('hidden');
-  document.getElementById('step'+step+'-panel').classList.add('fade-enter');
-  ['line1','line2'].forEach((l,i) => {
-    if (i+1 < step) document.getElementById(l).classList.add('done');
-    else document.getElementById(l).classList.remove('done');
+  const currentPanel = document.getElementById('step'+step+'-panel');
+  if (currentPanel) {
+    currentPanel.classList.remove('hidden');
+    currentPanel.classList.add('fade-enter');
+  }
+  ['line1','line2','line3'].forEach((l,i) => {
+    const line = document.getElementById(l);
+    if (line) {
+      if (i+1 < step) line.classList.add('done');
+      else line.classList.remove('done');
+    }
   });
 }
 
 function goStep1() { setStepUI(1); }
 function goStep2() { setStepUI(2); }
-async function goStep3() {
-  setStepUI(3);
+function goStep3() { setStepUI(3); }
+async function goStep4() {
+  setStepUI(4);
   await loadPreview();
+}
+
+async function importCredentials() {
+  const btn = document.getElementById('btn-import-creds');
+  const status = document.getElementById('cred-status');
+  const result = document.getElementById('cred-result');
+  const countDiv = document.getElementById('cred-count');
+  const mapDiv = document.getElementById('cred-map');
+  const btnNext = document.getElementById('btn-next3');
+  
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 导入中...';
+  status.textContent = '正在从 Zabbix 提取 SNMP 团体名...';
+  
+  const zabbixUrl = document.getElementById('src-url').value;
+  const zabbixUser = document.getElementById('src-user').value;
+  const zabbixPass = document.getElementById('src-pass').value;
+  
+  try {
+    const resp = await fetch('/api/credentials/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        zabbix_url: zabbixUrl,
+        zabbix_username: zabbixUser,
+        zabbix_password: zabbixPass
+      })
+    });
+    const data = await resp.json();
+    
+    if (data.success) {
+      credentialMap = data.credential_map || {};
+      const count = data.imported_count || 0;
+      
+      status.textContent = '凭证导入完成';
+      result.classList.remove('hidden');
+      countDiv.textContent = '已导入 ' + count + ' 个凭证';
+      
+      // 显示映射表
+      let mapHtml = '';
+      for (const [name, id] of Object.entries(credentialMap)) {
+        mapHtml += '<span style="margin-right: 16px;">' + name + ' → ' + id + '</span>';
+      }
+      mapDiv.innerHTML = mapHtml;
+      
+      btn.innerHTML = '✓ 已导入';
+      btnNext.disabled = false;
+      
+      showToast('凭证导入成功', 'success');
+    } else {
+      status.textContent = '导入失败: ' + (data.error || '未知错误');
+      btn.disabled = false;
+      btn.innerHTML = '📥 导入凭证';
+      showToast('凭证导入失败', 'error');
+    }
+  } catch (e) {
+    status.textContent = '请求失败: ' + e.message;
+    btn.disabled = false;
+    btn.innerHTML = '📥 导入凭证';
+    showToast('请求失败', 'error');
+  }
 }
 
 async function loadPreview() {
@@ -901,14 +979,6 @@ async function startMigration() {
   }
 
   const tognixUrl = document.getElementById('dst-url').value;
-  const tognixUser = document.getElementById('dst-user').value;
-  const tognixPass = document.getElementById('dst-pass').value;
-  const tognixToken = document.getElementById('dst-token').value;
-
-  // 检查 zops-token
-  if (!tognixToken) {
-    addLog('⚠️ 未填写 zops-token，迁移可能失败！请在目标连接页面填写浏览器登录产生的 zops-token', 'warning');
-  }
 
   try {
     const resp = await fetch('/api/migrate/execute', {
@@ -916,10 +986,8 @@ async function startMigration() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tognix_url: tognixUrl,
-        tognix_username: tognixUser,
-        tognix_password: tognixPass,
-        tognix_token: tognixToken,
-        selected_hosts: selectedHosts
+        selected_hosts: selectedHosts,
+        credential_map: credentialMap
       })
     });
     const data = await resp.json();
