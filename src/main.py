@@ -29,7 +29,7 @@ from src.credential_importer import import_credentials
 from src.credential_extractor import CredentialExtractor
 from src.excel_exporter import ExcelExporter
 
-app = FastAPI(title="Tognix-Move", version="0.3.5")
+app = FastAPI(title="Tognix-Move", version="0.3.6")
 
 app.add_middleware(
     CORSMiddleware,
@@ -65,7 +65,7 @@ def resolve_snmp_community(details_comm: str, macros: list) -> str:
 @app.get("/api/health")
 def health():
     """健康检查"""
-    return {"status": "ok", "version": "0.3.5"}
+    return {"status": "ok", "version": "0.3.6"}
 
 
 # === Zabbix Source ===
