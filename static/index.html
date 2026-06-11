@@ -359,7 +359,7 @@ select.form-input option {
         <div class="logo-sub">Zabbix → Tognix 迁移工具</div>
       </div>
     </div>
-    <div class="header-badge">v0.3.2</div>
+    <div class="header-badge" id="version-badge">加载中...</div>
   </div>
 </div>
 
@@ -422,7 +422,7 @@ select.form-input option {
         <div class="form-group">
           <label class="form-label">密码</label>
           <div class="form-input-wrap">
-            <input class="form-input" type="password" placeholder="••••••••" value="zabbix" id="src-pass">
+            <input class="form-input" type="password" placeholder="••••••••" value="" id="src-pass">
             <button class="pwd-toggle" onclick="togglePwd('src-pass', this)" title="显示密码">👁</button>
           </div>
         </div>
@@ -460,7 +460,7 @@ select.form-input option {
           </div>
           <div class="form-group">
             <label class="form-label">用户名</label>
-            <input class="form-input" placeholder="Admin" id="dst-user" value="">
+            <input class="form-input" placeholder="Admin" id="dst-user" value="Admin">
             <span class="form-hint">Tognix 登录用户名（如 Admin）</span>
           </div>
           <div class="form-group">
@@ -602,7 +602,7 @@ select.form-input option {
           <div id="result-fail-list" style="font-size:15px;color:var(--text-primary);line-height:2;"></div>
         </div>
         <div style="margin-top:28px;display:flex;gap:16px;justify-content:center;flex-wrap:wrap;">
-          <a href="https://192.168.31.128" target="_blank" class="btn btn-primary">打开 Tognix 平台 →</a>
+          <a href="#" id="btn-open-tognix" onclick="openTognixPlatform()" target="_blank" class="btn btn-primary">打开 Tognix 平台 →</a>
           <button class="btn btn-secondary" onclick="downloadCredentialsExcel()">📥 导出凭证清单</button>
           <button class="btn btn-ghost" onclick="goStep1()">🔄 重新开始</button>
         </div>
@@ -611,6 +611,13 @@ select.form-input option {
 
 
 <script>
+// 页面加载时获取版本号
+fetch("/api/health").then(r => r.json()).then(d => {
+  document.getElementById("version-badge").textContent = "v" + d.version;
+}).catch(() => {
+  document.getElementById("version-badge").textContent = "v0.3.3";
+});
+
 // State
 let currentStep = 1;
 let migrationResults = { success: [], failed: [] };  // 保存迁移结果
@@ -1024,6 +1031,7 @@ async function importAndMigrate() {
       body: JSON.stringify({
         zabbix_url: document.getElementById('src-url').value,
         zabbix_username: document.getElementById('src-user').value,
+        tognix_url: document.getElementById("dst-url").value,
         zabbix_password: document.getElementById('src-pass').value,
         communities: Array.from(communities)  // 只传选中主机的团体名
       })
@@ -1050,6 +1058,8 @@ async function importAndMigrate() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tognix_url: document.getElementById('dst-url').value,
+        username: document.getElementById('dst-user')?.value || 'Admin',
+        password: document.getElementById('dst-pass')?.value || '',
         selected_hosts: selectedHosts,
         credential_map: credentialMap
       })
@@ -1193,6 +1203,7 @@ async function importCredentials() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         zabbix_url: zabbixUrl,
+        tognix_url: document.getElementById("dst-url").value,
         zabbix_username: zabbixUser,
         zabbix_password: zabbixPass
       })
@@ -1373,6 +1384,7 @@ async function startMigration() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        tognix_url: document.getElementById("dst-url").value,
         zabbix_url: document.getElementById('src-url').value,
         zabbix_username: document.getElementById('src-user').value,
         zabbix_password: document.getElementById('src-pass').value,
@@ -1398,6 +1410,8 @@ async function startMigration() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tognix_url: tognixUrl,
+        username: document.getElementById('dst-user')?.value || 'Admin',
+        password: document.getElementById('dst-pass')?.value || '',
         selected_hosts: selectedHosts,
         credential_map: credentialMap
       })
@@ -1456,6 +1470,13 @@ function onCredToggle() {
   } else {
     desc.textContent = '凭证迁移已关闭。主机监控项仍会迁移，但 SNMP 团体名等需在 Tognix 中手动配置。';
   }
+}
+
+function openTognixPlatform() {
+  const apiUrl = document.getElementById("dst-url").value;
+  // 从 API URL 提取 Vue 前端 URL（去掉端口 1618）
+  const vueUrl = apiUrl.replace(/:[0-9]+/.*$/, "").replace("api_jsonrpc.php", "").replace(//$/, "");
+  window.open(vueUrl, "_blank");
 }
 
 function downloadCredentialsExcel() {

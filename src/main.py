@@ -29,7 +29,7 @@ from src.credential_importer import import_credentials
 from src.credential_extractor import CredentialExtractor
 from src.excel_exporter import ExcelExporter
 
-app = FastAPI(title="Tognix-Move", version="0.4.0")
+app = FastAPI(title="Tognix-Move", version="0.3.3")
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,7 +42,7 @@ app.add_middleware(
 @app.get("/api/health")
 def health():
     """健康检查"""
-    return {"status": "ok", "version": "0.4.0"}
+    return {"status": "ok", "version": "0.3.3"}
 
 
 # === Zabbix Source ===
@@ -134,6 +134,7 @@ class CredentialImportRequest(BaseModel):
     zabbix_username: str
     zabbix_password: str
     communities: List[str] = []  # 可选：只导入指定团体名
+    tognix_url: str = ""  # Tognix API 地址
 
 
 @app.post("/api/credentials/import")
@@ -168,7 +169,7 @@ def credentials_import(req: CredentialImportRequest):
             communities.add("public")
 
         # 导入到 Tognix
-        credential_map = import_credentials(list(communities))
+        credential_map = import_credentials(list(communities), api_url=req.tognix_url)
 
         return {
             "success": True,
@@ -197,7 +198,7 @@ def tognix_connect(req: TognixConnectRequest):
         if req.token:
             token = req.token
         else:
-            token = get_token_sync(username=req.username, password=req.password)
+            token = get_token_sync(username=req.username, password=req.password, api_url=req.url)
         if not token:
             return {"success": False, "error": "登录失败：账号或密码错误"}
     except Exception as e:
@@ -225,7 +226,7 @@ def tognix_connect(req: TognixConnectRequest):
 
 @app.post("/api/tognix/auto-login")
 def tognix_auto_login():
-    """Playwright 自动登录获取 zops-token"""
+    """Playwright 自动登录获取 zops-token（使用默认 URL）"""
     try:
         token = get_token_sync()
         return {"success": True, "token": token, "message": "自动登录成功"}
@@ -254,6 +255,8 @@ class MigratePreviewRequest(BaseModel):
     zabbix_username: str
     zabbix_password: str
     tognix_url: str
+    tognix_username: str = "Admin"
+    tognix_password: str = ""
 
 
 @app.post("/api/migrate/preview")
@@ -263,9 +266,9 @@ def migrate_preview(req: MigratePreviewRequest):
     if not zbx_client.login(req.zabbix_username, req.zabbix_password):
         return {"success": False, "error": "Zabbix 登录失败"}
 
-    # 自动获取 token
+    # 自动获取 token（使用用户指定的 Tognix URL）
     try:
-        token = get_token_sync()
+        token = get_token_sync(username=req.tognix_username, password=req.tognix_password, api_url=req.tognix_url)
     except Exception as e:
         return {"success": False, "error": f"Tognix 自动登录失败: {e}"}
 
@@ -337,12 +340,12 @@ def migrate_execute(req: MigrateExecuteRequest):
     results = []
     success_count = 0
     failed_count = 0
-    
+
     # 优先使用缓存的token
     token = get_cached_token()
     if not token:
         try:
-            token = get_token_sync(username=req.username, password=req.password)
+            token = get_token_sync(username=req.username, password=req.password, api_url=req.tognix_url)
             if token:
                 set_token(token)
         except Exception as e:
@@ -381,7 +384,8 @@ def migrate_execute(req: MigrateExecuteRequest):
                 ip=ip,
                 credentials=[cred_id],
                 hostgroupid=groupid,
-                status="0"
+                status="0",
+                api_url=req.tognix_url
             )
 
             if result["success"]:
