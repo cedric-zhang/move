@@ -602,7 +602,7 @@ select.form-input option {
           <div id="result-fail-list" style="font-size:15px;color:var(--text-primary);line-height:2;"></div>
         </div>
         <div style="margin-top:28px;display:flex;gap:16px;justify-content:center;flex-wrap:wrap;">
-          <a href="https://192.168.31.128" target="_blank" class="btn btn-primary">打开 Tognix 平台 →</a>
+          <a id="open-tognix-btn" href="#" target="_blank" class="btn btn-primary">打开 Tognix 平台 →</a>
           <button class="btn btn-secondary" onclick="downloadCredentialsExcel()">📥 导出凭证清单</button>
           <button class="btn btn-ghost" onclick="goStep1()">🔄 重新开始</button>
         </div>
@@ -1171,6 +1171,21 @@ function showMigrationResult() {
 
   // 显示结果区域（所有情况都要显示）
   resultSection.style.display = 'block';
+
+  // 动态设置"打开 Tognix 平台"按钮的 URL
+  const openTognixBtn = document.getElementById('open-tognix-btn');
+  if (openTognixBtn) {
+    const dstUrl = document.getElementById('dst-url').value;
+    // 从 API URL 解析 Vue 前端 URL（去掉端口1618和路径）
+    // https://192.168.31.191:1618/api_jsonrpc.php -> https://192.168.31.191
+    try {
+      const urlObj = new URL(dstUrl);
+      const vueUrl = urlObj.protocol + '//' + urlObj.hostname;
+      openTognixBtn.href = vueUrl;
+    } catch (e) {
+      openTognixBtn.href = dstUrl;  // 解析失败则用原值
+    }
+  }
 
   // 隐藏进度条
   const progressSection = document.getElementById('progress-section');
