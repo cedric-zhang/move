@@ -39,6 +39,29 @@ app.add_middleware(
 )
 
 
+
+
+
+def resolve_snmp_community(details_comm: str, macros: list) -> str:
+    """解析 SNMP 团体名：处理宏引用和直接值"""
+    if not details_comm:
+        # details 中没有，从 macros 提取
+        for m in macros:
+            if "SNMP_COMMUNITY" in m.get("macro", "").upper():
+                return m.get("value", "public")
+        return None
+    
+    # details 中有值
+    if details_comm.startswith("{") and "$" in details_comm:
+        # 是宏引用，如 {$SNMP_COMMUNITY}
+        for m in macros:
+            if m.get("macro") == details_comm:
+                return m.get("value", details_comm)
+        return details_comm
+    else:
+        # 直接是真实值
+        return details_comm
+
 @app.get("/api/health")
 def health():
     """健康检查"""
@@ -90,15 +113,10 @@ def zabbix_preview(req: ZabbixPreviewRequest):
                     # 从 interface.details 提取 SNMP 团体名
                     if iface.get("type") == "2":  # SNMP
                         details = iface.get("details", {})
-                        snmp_community = details.get("community", None)
+                        raw_comm = details.get("community", None)
+                        # 解析宏引用（如 {$SNMP_COMMUNITY}）
+                        snmp_community = resolve_snmp_community(raw_comm, h.get("macros", []))
                     break
-
-            # 如果 details 中没有，再从 macros 提取
-            if not snmp_community and h.get("macros"):
-                for m in h.get("macros", []):
-                    if "SNMP_COMMUNITY" in m.get("macro", ""):
-                        snmp_community = m.get("value")
-                        break
 
             templates = [t["host"] for t in h.get("parentTemplates", [])]
             src_tpl = templates[0] if templates else ""
@@ -176,14 +194,12 @@ def credentials_import(req: CredentialImportRequest):
             for h in hosts:
                 for iface in h.get("interfaces", []):
                     if iface.get("type") == "2":  # SNMP
-                        # 优先从 interface.details 提取
+                        # 从 interface.details 提取并解析宏引用
                         details = iface.get("details", {})
-                        if details.get("community"):
-                            communities.add(details.get("community"))
-                        # 再从 macros 提取
-                        for m in h.get("macros", []):
-                            if "SNMP_COMMUNITY" in m.get("macro", ""):
-                                communities.add(m.get("value", "public"))
+                        raw_comm = details.get("community")
+                        resolved = resolve_snmp_community(raw_comm, h.get("macros", []))
+                        if resolved:
+                            communities.add(resolved)
                         break
 
             # 默认添加 public
@@ -318,18 +334,14 @@ def migrate_preview(req: MigratePreviewRequest):
 
             snmp_community = None
             if iface_type == "2":
-                # 优先从 interface.details 提取
+                # 从 interface.details 提取原始团体名
                 for iface in h.get("interfaces", []):
                     if iface.get("main") == "1":
                         details = iface.get("details", {})
-                        snmp_community = details.get("community")
+                        raw_comm = details.get("community")
+                        # 解析宏引用
+                        snmp_community = resolve_snmp_community(raw_comm, h.get("macros", []))
                         break
-                # 再从 macros 提取
-                if not snmp_community:
-                    for m in h.get("macros", []):
-                        if "SNMP_COMMUNITY" in m.get("macro", ""):
-                            snmp_community = m.get("value", "public")
-                            break
                 if not snmp_community:
                     snmp_community = "public"
 

@@ -28,7 +28,7 @@ class CredentialExtractor:
 
     def extract_all(self) -> List[Dict[str, Any]]:
         """
-        从 Zabbix 宏中提取所有类型凭证。
+        从 Zabbix 宏和接口详情中提取所有类型凭证。
         返回: [{id, type, name, credential_value, field, host_count, host_list}]
         """
         hosts = self.client.get_hosts()
@@ -38,7 +38,37 @@ class CredentialExtractor:
         for h in hosts:
             host_name = h.get("host", h.get("name", ""))
             macros = h.get("macros", [])
+            
+            # 1. 从 interface.details.community 提取 SNMP 团体名
+            for iface in h.get("interfaces", []):
+                if iface.get("main") == "1" and iface.get("type") == "2":  # SNMP
+                    details = iface.get("details", {})
+                    raw_comm = details.get("community")
+                    # 解析宏引用
+                    if raw_comm:
+                        if raw_comm.startswith("{") and "$" in raw_comm:
+                            # 是宏引用，从 macros 找真实值
+                            for m in macros:
+                                if m.get("macro") == raw_comm:
+                                    raw_comm = m.get("value", raw_comm)
+                                    break
+                        # 添加 SNMPv2 凭证
+                        key = f"SNMPv2:{raw_comm}"
+                        if key not in credentials:
+                            credentials[key] = {
+                                "id": cred_id,
+                                "type": "SNMPv2",
+                                "name": raw_comm,
+                                "credential_value": raw_comm,
+                                "field": "community",
+                                "hosts": [host_name],
+                            }
+                            cred_id += 1
+                        else:
+                            credentials[key]["hosts"].append(host_name)
+                    break
 
+            # 2. 从 macros 提取其他类型凭证（SNMPv3, SSH, etc）
             for m in macros:
                 macro_name = m.get("macro", "")
                 macro_value = m.get("value", "")
@@ -46,6 +76,10 @@ class CredentialExtractor:
                 # 检测凭证类型
                 cred_type, field = self._detect_type(macro_name)
                 if not cred_type:
+                    continue
+                
+                # SNMP_COMMUNITY 宏已从 interface 提取，跳过
+                if "SNMP_COMMUNITY" in macro_name.upper() and cred_type == "SNMPv2":
                     continue
 
                 # 按值分组（相同值视为同一凭证）
