@@ -6,11 +6,11 @@
 
 set -e
 
-GREEN=\x27\033[0;32m\x27
-BLUE=\x27\033[0;34m\x27
-YELLOW=\x27\033[1;33m\x27
-RED=\x27\033[0;31m\x27
-NC=\x27\033[0m\x27
+GREEN="\033[0;32m"
+BLUE="\033[0;34m"
+YELLOW="\033[1;33m"
+RED="\033[0;31m"
+NC="\033[0m"
 
 step()  { echo -e "${BLUE}[$1/$TOTAL]${NC} $2"; }
 ok()    { echo -e "  ${GREEN}✓${NC} $1"; }
