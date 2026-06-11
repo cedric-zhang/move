@@ -108,8 +108,7 @@ cd /opt/tognix-move
 # === Step 6: 安装 Python 依赖 (离线模式) ===
 step 6 "安装 Python 依赖 (离线模式)..."
 if [ -d "deps" ]; then
-    $PYTHON_CMD -m pip install --no-index --find-links=deps/ -r requirements.txt 2>&1 | tail -3
-    $PYTHON_CMD -m pip install --no-index --find-links=deps/ playwright 2>&1 | tail -3
+    $PYTHON_CMD -m pip install --no-index --find-links=deps/ deps/*.whl 2>&1 | tail -5
     ok "Python 依赖安装完成 (离线模式)"
 else
     warn "deps/ 目录不存在，跳过离线安装"
