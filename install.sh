@@ -6,18 +6,18 @@
 
 set -e
 
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
+GREEN=\x27\033[0;32m\x27
+BLUE=\x27\033[0;34m\x27
+YELLOW=\x27\033[1;33m\x27
+RED=\x27\033[0;31m\x27
+NC=\x27\033[0m\x27
 
 step()  { echo -e "${BLUE}[$1/$TOTAL]${NC} $2"; }
 ok()    { echo -e "  ${GREEN}✓${NC} $1"; }
 warn()  { echo -e "  ${YELLOW}⚠${NC} $1"; }
 err()   { echo -e "  ${RED}✗${NC} $1"; }
 
-TOTAL=9
+TOTAL=10
 
 echo "${BLUE}╔══════════════════════════════════════╗${NC}"
 echo "${BLUE}║   Tognix-Move v0.4.0 安装程序       ║${NC}"
@@ -43,13 +43,12 @@ fi
 # === Step 2: 安装 Python 3.9 ===
 step 2 "安装 Python 3.9..."
 
-# 检查是否已有 Python 3.9
 PYTHON_CMD=""
 if command -v python3.9 &> /dev/null; then
     PYTHON_CMD="python3.9"
     ok "Python 3.9 已安装: $(python3.9 --version)"
 elif command -v python3 &> /dev/null; then
-    PY_VER=$(python3 --version 2>&1 | grep -oP '3\.\d+' | head -1)
+    PY_VER=$(python3 --version 2>&1 | grep -oP "3\.\d+" | head -1)
     if [[ "$PY_VER" == "3.9" || "$PY_VER" > "3.9" ]]; then
         PYTHON_CMD="python3"
         ok "Python 已安装: $(python3 --version)"
@@ -64,10 +63,20 @@ if [ -z "$PYTHON_CMD" ]; then
     ok "Python 3.9 安装完成"
 fi
 
-# === Step 3: 安装系统依赖 ===
-step 3 "安装系统依赖 (Playwright)..."
-dnf install -y     atk at-spi2-atk cups-libs libdrm libgbm gtk3     nspr nss xorg-x11-server-Xvfb libxkbcommon     alsa-lib liberation-fonts-fontconfig 2>/dev/null || true
-ok "系统依赖安装完成"
+# === Step 3: 安装 Chromium 系统依赖 ===
+step 3 "安装 Chromium 系统依赖..."
+if command -v dnf &>/dev/null; then
+    dnf install -y \
+        atk at-spi2-atk cups-libs libXcomposite libXdamage \
+        libXrandr mesa-libgbm pango alsa-lib libdrm \
+        gtk3 nss nspr libxkbcommon liberation-fonts-fontconfig 2>&1 | tail -3
+elif command -v yum &>/dev/null; then
+    yum install -y \
+        atk at-spi2-atk cups-libs libXcomposite libXdamage \
+        libXrandr mesa-libgbm pango alsa-lib libdrm \
+        gtk3 nss nspr libxkbcommon liberation-fonts-fontconfig 2>&1 | tail -3
+fi
+ok "Chromium 系统依赖已安装"
 
 # === Step 4: 创建安装目录 ===
 step 4 "创建安装目录 /opt/tognix-move..."
@@ -77,12 +86,10 @@ ok "目录已创建"
 # === Step 5: 解压程序文件 ===
 step 5 "解压程序文件..."
 
-# 检测安装包位置
 PKG_DIR=""
 if [ -f "./tognix-move.tar.gz" ]; then
     PKG_DIR="./tognix-move.tar.gz"
 elif [ -f "./install.sh" ] && [ -d "./src" ]; then
-    # 已解压状态，直接复制
     PKG_DIR="local"
 fi
 
@@ -95,7 +102,8 @@ if [ "$PKG_DIR" = "local" ]; then
     FILE_COUNT=$(find /opt/tognix-move -type f | wc -l)
     ok "文件复制完成 ($FILE_COUNT 个文件)"
 elif [ -n "$PKG_DIR" ]; then
-    tar xzf "$PKG_DIR" -C /opt/ 2>/dev/null ||     tar xzf "$PKG_DIR" --strip-components=1 -C /opt/tognix-move/
+    tar xzf "$PKG_DIR" -C /opt/ 2>/dev/null || \
+    tar xzf "$PKG_DIR" --strip-components=1 -C /opt/tognix-move/
     FILE_COUNT=$(find /opt/tognix-move -type f | wc -l)
     ok "文件解压完成 ($FILE_COUNT 个文件)"
 else
@@ -124,11 +132,26 @@ else
     warn "playwright-chromium.tar.gz 不存在，跳过"
 fi
 
-# === Step 8: 配置 systemd 服务 ===
-step 8 "配置 systemd 服务..."
+# === Step 8: 验证 Chromium 可用性 ===
+step 8 "验证 Chromium 可用性..."
+if $PYTHON_CMD -c "
+from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+    b = p.chromium.launch(headless=True, args=[\"--no-sandbox\"])
+    b.close()
+    print(\"OK\")
+" 2>/dev/null; then
+    ok "Chromium 浏览器可用"
+else
+    warn "Chromium 不可用 — 请手动安装系统依赖:"
+    echo "  dnf install -y atk at-spi2-atk cups-libs libXcomposite libXdamage libXrandr mesa-libgbm pango alsa-lib libdrm gtk3 nss nspr libxkbcommon"
+    echo "  然后重启服务: systemctl restart tognix-move"
+fi
 
-# 检测端口（默认 800）
-PORT=$(grep -oP '"port": \K\d+' src/config.py 2>/dev/null || echo "800")
+# === Step 9: 配置 systemd 服务 ===
+step 9 "配置 systemd 服务..."
+
+PORT=$(grep -oP "\"port\": \K\d+" src/config.py 2>/dev/null || echo "800")
 
 cat > /etc/systemd/system/tognix-move.service << SERVICE_EOF
 [Unit]
@@ -152,8 +175,8 @@ systemctl daemon-reload
 systemctl enable tognix-move
 ok "systemd 服务已注册 (端口 $PORT)"
 
-# === Step 9: 启动并验证服务 ===
-step 9 "启动服务并验证..."
+# === Step 10: 启动并验证服务 ===
+step 10 "启动服务并验证..."
 systemctl restart tognix-move
 sleep 3
 
@@ -165,7 +188,6 @@ else
     exit 1
 fi
 
-# HTTP 验证
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/ 2>/dev/null || echo "000")
 if [ "$HTTP_CODE" = "200" ]; then
     ok "HTTP 验证成功 (状态码: 200)"
@@ -179,10 +201,9 @@ echo "${GREEN}╔═════════════════════
 echo "${GREEN}║  ✅ Tognix-Move 安装完成！                    ║${NC}"
 echo "${GREEN}╠════════════════════════════════════════════════╣${NC}"
 
-# 自动检测本机 IP
-LOCAL_IP=$(ip -4 addr show scope global | grep -oP 'inet \K[\d.]+' | head -1)
+LOCAL_IP=$(ip -4 addr show scope global | grep -oP "inet \K[\d.]+" | head -1)
 if [ -z "$LOCAL_IP" ]; then
-    LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    LOCAL_IP=$(hostname -I 2>/dev/null | awk "{print \$1}")
 fi
 if [ -z "$LOCAL_IP" ]; then
     LOCAL_IP="<服务器IP>"
@@ -198,7 +219,6 @@ echo "${GREEN}║                                              ║${NC}"
 echo "${GREEN}╚════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# 提示配置文件
 if [ -f /opt/tognix-move/config.yaml ]; then
     echo "配置文件位置: /opt/tognix-move/config.yaml"
     echo "请编辑此文件填写您的 Zabbix/Tognix 地址"
