@@ -611,11 +611,12 @@ select.form-input option {
 
 
 <script>
-// 页面加载时获取版本号
-fetch("/api/health").then(r => r.json()).then(d => {
-  document.getElementById("version-badge").textContent = "v" + d.version;
-}).catch(() => {
-  document.getElementById("version-badge").textContent = "v0.3.3";
+document.addEventListener("DOMContentLoaded", () => {
+  fetch("/api/health").then(r => r.json()).then(d => {
+    document.getElementById("version-badge").textContent = "v" + d.version;
+  }).catch(() => {
+    document.getElementById("version-badge").textContent = "v0.3.3";
+  });
 });
 
 // State
