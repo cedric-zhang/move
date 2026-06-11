@@ -134,7 +134,6 @@ class CredentialImportRequest(BaseModel):
     zabbix_username: str
     zabbix_password: str
     communities: List[str] = []  # 可选：只导入指定团体名
-    tognix_url: str = ""  # Tognix API 地址
 
 
 @app.post("/api/credentials/import")
@@ -169,7 +168,7 @@ def credentials_import(req: CredentialImportRequest):
             communities.add("public")
 
         # 导入到 Tognix
-        credential_map = import_credentials(list(communities), api_url=req.tognix_url)
+        credential_map = import_credentials(list(communities))
 
         return {
             "success": True,
