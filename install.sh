@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════
-# Tognix-Move 一键安装脚本 (离线版)
+# Tognix-Move 一键安装脚本 (完全离线版)
 # 支持 RockyLinux 8.x / CentOS 8.x / RHEL 8.x
 # ═══════════════════════════════════════════════════════════════
 
@@ -17,11 +17,11 @@ ok()    { echo -e "  ${GREEN}✓${NC} $1"; }
 warn()  { echo -e "  ${YELLOW}⚠${NC} $1"; }
 err()   { echo -e "  ${RED}✗${NC} $1"; }
 
-TOTAL=10
+TOTAL=11
 
 echo "${BLUE}╔══════════════════════════════════════╗${NC}"
 echo "${BLUE}║   Tognix-Move v0.4.0 安装程序       ║${NC}"
-echo "${BLUE}║   (离线安装包)                       ║${NC}"
+echo "${BLUE}║   (完全离线安装包)                   ║${NC}"
 echo "${BLUE}╚══════════════════════════════════════╝${NC}"
 echo ""
 
@@ -63,28 +63,13 @@ if [ -z "$PYTHON_CMD" ]; then
     ok "Python 3.9 安装完成"
 fi
 
-# === Step 3: 安装 Chromium 系统依赖 ===
-step 3 "安装 Chromium 系统依赖..."
-if command -v dnf &>/dev/null; then
-    dnf install -y \
-        atk at-spi2-atk cups-libs libXcomposite libXdamage \
-        libXrandr mesa-libgbm pango alsa-lib libdrm \
-        gtk3 nss nspr libxkbcommon liberation-fonts-fontconfig 2>&1 | tail -3
-elif command -v yum &>/dev/null; then
-    yum install -y \
-        atk at-spi2-atk cups-libs libXcomposite libXdamage \
-        libXrandr mesa-libgbm pango alsa-lib libdrm \
-        gtk3 nss nspr libxkbcommon liberation-fonts-fontconfig 2>&1 | tail -3
-fi
-ok "Chromium 系统依赖已安装"
-
-# === Step 4: 创建安装目录 ===
-step 4 "创建安装目录 /opt/tognix-move..."
+# === Step 3: 创建安装目录 ===
+step 3 "创建安装目录 /opt/tognix-move..."
 mkdir -p /opt/tognix-move
 ok "目录已创建"
 
-# === Step 5: 解压程序文件 ===
-step 5 "解压程序文件..."
+# === Step 4: 解压程序文件 ===
+step 4 "解压程序文件..."
 
 PKG_DIR=""
 if [ -f "./tognix-move.tar.gz" ]; then
@@ -98,6 +83,7 @@ if [ "$PKG_DIR" = "local" ]; then
     cp -r ./static /opt/tognix-move/
     cp -r ./tests /opt/tognix-move/ 2>/dev/null || true
     cp -r ./deps /opt/tognix-move/ 2>/dev/null || true
+    cp -r ./rpm-deps /opt/tognix-move/ 2>/dev/null || true
     cp ./requirements.txt /opt/tognix-move/ 2>/dev/null || true
     FILE_COUNT=$(find /opt/tognix-move -type f | wc -l)
     ok "文件复制完成 ($FILE_COUNT 个文件)"
@@ -112,6 +98,19 @@ else
 fi
 
 cd /opt/tognix-move
+
+# === Step 5: 安装 Chromium 系统依赖 (离线 RPM) ===
+step 5 "安装 Chromium 系统依赖 (离线模式)..."
+if [ -d "rpm-deps" ]; then
+    RPM_COUNT=$(ls rpm-deps/*.rpm 2>/dev/null | wc -l)
+    echo "  检测到 $RPM_COUNT 个 RPM 包"
+    rpm -Uvh --nosignature rpm-deps/*.rpm 2>&1 | tail -5 || \
+    yum localinstall -y rpm-deps/*.rpm 2>&1 | tail -5 || \
+    dnf localinstall -y rpm-deps/*.rpm 2>&1 | tail -5
+    ok "Chromium 系统依赖已安装 (离线模式)"
+else
+    warn "rpm-deps/ 目录不存在，跳过 RPM 安装"
+fi
 
 # === Step 6: 安装 Python 依赖 (离线模式) ===
 step 6 "安装 Python 依赖 (离线模式)..."
@@ -143,9 +142,7 @@ with sync_playwright() as p:
 " 2>/dev/null; then
     ok "Chromium 浏览器可用"
 else
-    warn "Chromium 不可用 — 请手动安装系统依赖:"
-    echo "  dnf install -y atk at-spi2-atk cups-libs libXcomposite libXdamage libXrandr mesa-libgbm pango alsa-lib libdrm gtk3 nss nspr libxkbcommon"
-    echo "  然后重启服务: systemctl restart tognix-move"
+    warn "Chromium 不可用 — 检查系统依赖是否完整"
 fi
 
 # === Step 9: 配置 systemd 服务 ===
@@ -195,7 +192,9 @@ else
     warn "HTTP 验证异常 (状态码: $HTTP_CODE)"
 fi
 
-# === 安装完成 ===
+# === Step 11: 安装完成 ===
+step 11 "安装完成..."
+
 echo ""
 echo "${GREEN}╔════════════════════════════════════════════════╗${NC}"
 echo "${GREEN}║  ✅ Tognix-Move 安装完成！                    ║${NC}"
