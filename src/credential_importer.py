@@ -1,29 +1,46 @@
-"""通过 API 在 Tognix 创建 SNMPv2 凭证（替代 UI 自动化）"""
+"""通过 API 在 Tognix 创建 SNMPv2 凭证"""
 import requests
 import urllib3
 from src.tognix_browser import get_token_sync
 
 urllib3.disable_warnings()
 
-# 默认 URL（用于兼容旧调用）
-DEFAULT_TOGNIX_API_URL = "https://192.168.31.128:1618/api_jsonrpc.php"
 
-
-def import_credentials(communities: list, api_url: str = DEFAULT_TOGNIX_API_URL) -> dict:
-    """"
+def import_credentials(
+    communities: list,
+    tognix_url: str = None,
+    tognix_username: str = "Admin",
+    tognix_password: str = ""
+) -> dict:
+    """
     导入 SNMP 团体名到 Tognix
 
-    输入: communities - 去重的 SNMP 团体名列表
-    输入: api_url - Tognix API 地址（可选，默认使用内置地址）
+    参数:
+        communities: 去重的 SNMP 团体名列表
+        tognix_url: Tognix API 地址（必须由调用方传入）
+        tognix_username: Tognix 登录用户名（默认Admin，由调用方传入）
+        tognix_password: Tognix 登录密码（由调用方传入）
+
     输出: {"团体名": "凭证ID"} 映射
     """
-    token = get_token_sync(api_url=api_url)
-    headers = {"Authorization": f"Bearer {token}"}
+    if not tognix_url:
+        raise ValueError("tognix_url 参数必须传入，不能为空")
 
+    # 使用用户传入的凭证获取 token
+    token = get_token_sync(
+        username=tognix_username,
+        password=tognix_password,
+        api_url=tognix_url
+    )
+
+    if not token:
+        raise ValueError("Tognix 登录失败，无法获取 token")
+
+    headers = {"Authorization": f"Bearer {token}"}
     result = {}
 
     # 获取已存在的凭证
-    resp = requests.post(api_url, json={
+    resp = requests.post(tognix_url, json={
         "jsonrpc": "2.0",
         "method": "credentials.get",
         "params": {"output": ["id", "name", "type"]},
@@ -44,7 +61,7 @@ def import_credentials(communities: list, api_url: str = DEFAULT_TOGNIX_API_URL)
             continue
 
         # 创建新凭证
-        resp = requests.post(api_url, json={
+        resp = requests.post(tognix_url, json={
             "jsonrpc": "2.0",
             "method": "credentials.create",
             "params": {
@@ -71,6 +88,5 @@ def import_credentials(communities: list, api_url: str = DEFAULT_TOGNIX_API_URL)
 
 
 if __name__ == "__main__":
-    # 测试
-    result = import_credentials(["public", "test123", "zerops"])
-    print(f"导入结果: {result}")
+    # 测试示例（需要传入实际参数）
+    print("请传入实际参数测试")

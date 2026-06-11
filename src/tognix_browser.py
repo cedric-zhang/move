@@ -1,5 +1,6 @@
 """通过 Playwright 浏览器自动化获取 Tognix zops-token"""
 import asyncio
+import os
 import json
 from playwright.async_api import async_playwright
 from urllib.parse import urlparse
@@ -7,6 +8,9 @@ from urllib.parse import urlparse
 # 默认 URL（用于兼容旧调用）
 DEFAULT_TOGNIX_URL = "https://192.168.31.128"
 DEFAULT_API_URL = "https://192.168.31.128:1618/api_jsonrpc.php?lang=zh_CN"
+
+# 从环境变量读取超时配置，单位秒（默认60秒）
+DEFAULT_LOGIN_TIMEOUT = int(os.getenv("TOGNIX_LOGIN_TIMEOUT", "60"))
 
 
 def parse_tognix_url(api_url: str) -> tuple:
@@ -22,10 +26,12 @@ def parse_tognix_url(api_url: str) -> tuple:
     return f"{scheme}://{host}"
 
 
-async def login_vue(page, username: str, password: str):
+async def login_vue(page, username: str, password: str, timeout: int = None):
     """登录 Vue 前端"""
+    timeout_ms = (timeout or DEFAULT_LOGIN_TIMEOUT) * 1000
+
     # 使用通用选择器，避免中文编码问题
-    await page.wait_for_selector("input", timeout=15000)
+    await page.wait_for_selector("input", timeout=timeout_ms)
 
     # 填充账号和密码
     inputs = await page.query_selector_all("input")
@@ -41,13 +47,15 @@ async def login_vue(page, username: str, password: str):
     if btns:
         await btns[0].click()
 
-    # 等待登录成功（token写入localStorage）- 30秒超时
-    await page.wait_for_function("() => localStorage.getItem('zops-token')", timeout=30000)
+    # 等待登录成功（token写入localStorage）
+    await page.wait_for_function("() => localStorage.getItem('zops-token')", timeout=timeout_ms)
 
 
-async def get_zops_token(username: str = "Admin", password: str = "", api_url: str = DEFAULT_API_URL) -> str:
+async def get_zops_token(username: str = "Admin", password: str = "", api_url: str = DEFAULT_API_URL, timeout: int = None) -> str:
     """启动 headless 浏览器，登录获取 token"""
     vue_url = parse_tognix_url(api_url)
+    timeout_sec = timeout or DEFAULT_LOGIN_TIMEOUT
+    timeout_ms = timeout_sec * 1000
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -57,19 +65,19 @@ async def get_zops_token(username: str = "Admin", password: str = "", api_url: s
         context = await browser.new_context(ignore_https_errors=True)
         page = await context.new_page()
 
-        await page.goto(vue_url, wait_until="domcontentloaded", timeout=45000)
-        await page.wait_for_load_state("networkidle", timeout=30000)
+        await page.goto(vue_url, wait_until="domcontentloaded", timeout=timeout_ms)
+        await page.wait_for_load_state("networkidle", timeout=timeout_ms)
 
-        await login_vue(page, username, password)
+        await login_vue(page, username, password, timeout_sec)
 
         token = await page.evaluate("() => localStorage.getItem('zops-token')")
         await browser.close()
         return token
 
 
-def get_token_sync(username: str = "Admin", password: str = "", api_url: str = DEFAULT_API_URL) -> str:
+def get_token_sync(username: str = "Admin", password: str = "", api_url: str = DEFAULT_API_URL, timeout: int = None) -> str:
     """同步包装器"""
-    return asyncio.run(get_zops_token(username, password, api_url))
+    return asyncio.run(get_zops_token(username, password, api_url, timeout))
 
 
 if __name__ == "__main__":

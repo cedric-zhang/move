@@ -1025,7 +1025,10 @@ async function importAndMigrate() {
         zabbix_url: document.getElementById('src-url').value,
         zabbix_username: document.getElementById('src-user').value,
         zabbix_password: document.getElementById('src-pass').value,
-        communities: Array.from(communities)  // 只传选中主机的团体名
+        communities: Array.from(communities),  // 只传选中主机的团体名
+        tognix_url: document.getElementById('dst-url').value,
+        tognix_username: document.getElementById('dst-user').value,
+        tognix_password: document.getElementById('dst-pass').value
       })
     });
     const credData = await credResp.json();
@@ -1196,7 +1199,10 @@ async function importCredentials() {
       body: JSON.stringify({
         zabbix_url: zabbixUrl,
         zabbix_username: zabbixUser,
-        zabbix_password: zabbixPass
+        zabbix_password: zabbixPass,
+        tognix_url: document.getElementById('dst-url').value,
+        tognix_username: document.getElementById('dst-user').value,
+        tognix_password: document.getElementById('dst-pass').value
       })
     });
     const data = await resp.json();
@@ -1378,7 +1384,10 @@ async function startMigration() {
         zabbix_url: document.getElementById('src-url').value,
         zabbix_username: document.getElementById('src-user').value,
         zabbix_password: document.getElementById('src-pass').value,
-        communities: Array.from(communities)  // 只传选中的团体名
+        communities: Array.from(communities),  // 只传选中的团体名
+        tognix_url: document.getElementById('dst-url').value,
+        tognix_username: document.getElementById('dst-user').value,
+        tognix_password: document.getElementById('dst-pass').value
       })
     });
     const credData = await credResp.json();
