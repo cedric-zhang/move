@@ -1,133 +1,137 @@
 #!/bin/bash
-# Tognix-Move 一键安装脚本
+# ═══════════════════════════════════════════════════════════════
+# Tognix-Move 一键安装脚本 (离线版)
 # 支持 RockyLinux 8.x / CentOS 8.x / RHEL 8.x
-# 安装位置: /opt/tognix-move/
-# 访问方式: http://服务器IP:800
+# ═══════════════════════════════════════════════════════════════
 
 set -e
 
-echo "=========================================="
-echo "  Tognix-Move 一键安装脚本 v0.4.0"
-echo "=========================================="
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
 
-# === 1. OS 检测 ===
-if [ ! -f /etc/os-release ]; then
-    echo "错误: 无法检测操作系统"
-    exit 1
-fi
+step()  { echo -e "${BLUE}[$1/$TOTAL]${NC} $2"; }
+ok()    { echo -e "  ${GREEN}✓${NC} $1"; }
+warn()  { echo -e "  ${YELLOW}⚠${NC} $1"; }
+err()   { echo -e "  ${RED}✗${NC} $1"; }
 
-source /etc/os-release
-if [[ "$ID" != "rocky" && "$ID" != "centos" && "$ID" != "rhel" ]]; then
-    echo "警告: 此脚本针对 RockyLinux/CentOS/RHEL 8.x 设计"
-    echo "当前系统: $PRETTY_NAME"
-    read -p "是否继续安装? [y/N] " confirm
-    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-        exit 1
-    fi
-fi
+TOTAL=9
 
-# 检查是否 root
+echo "${BLUE}╔══════════════════════════════════════╗${NC}"
+echo "${BLUE}║   Tognix-Move v0.4.0 安装程序       ║${NC}"
+echo "${BLUE}║   (离线安装包)                       ║${NC}"
+echo "${BLUE}╚══════════════════════════════════════╝${NC}"
+echo ""
+
+# === 检查 root 权限 ===
 if [ "$EUID" -ne 0 ]; then
-    echo "错误: 请使用 root 用户执行此脚本"
+    err "请使用 root 用户执行此脚本"
     exit 1
 fi
 
-echo "[1/10] OS 检测通过: $PRETTY_NAME"
-
-# === 2. 安装 Python 3.9 ===
-echo "[2/10] 安装 Python 3.9..."
-
-# 启用 Python 3.9 module
-dnf module enable -y python39 || true
-
-# 安装 Python 3.9 和 pip
-dnf install -y python39 python39-pip
-
-# 验证
-PYTHON_VERSION=$(python3.9 --version 2>/dev/null || python3 --version)
-echo "Python 版本: $PYTHON_VERSION"
-
-# === 3. 安装系统依赖 (Playwright) ===
-echo "[3/10] 安装 Playwright 系统依赖..."
-
-dnf install -y     atk at-spi2-atk cups-libs libdrm libgbm gtk3     nspr nss xorg-x11-server-Xvfb libxkbcommon     alsa-lib libwebp libpng libjpeg-turbo     liberation-fonts-fontconfig || true
-
-# === 4. 安装 Python 依赖 ===
-echo "[4/10] 安装 Python 依赖..."
-
-# 创建临时目录
-TEMP_DIR=$(mktemp -d)
-cd $TEMP_DIR
-
-# 下载项目（从当前目录或 GitHub）
-# 方式1: 如果脚本在项目目录执行，直接复制
-if [ -d "./src" ] && [ -f "./requirements.txt" ]; then
-    echo "从当前目录复制..."
-    PROJECT_SRC="./"
+# === Step 1: OS 检测 ===
+step 1 "检测操作系统..."
+if [ -f /etc/os-release ]; then
+    source /etc/os-release
+    ok "操作系统: $PRETTY_NAME"
 else
-    # 方式2: 从 GitHub 下载（需要用户指定 URL）
-    if [ -z "$TOGNIX_MOVE_URL" ]; then
-        echo "请设置 TOGNIX_MOVE_URL 环境变量指定下载地址"
-        echo "例如: export TOGNIX_MOVE_URL=https://github.com/xxx/tognix-move/archive/v0.4.0.tar.gz"
-        echo "或将 install.sh 放在项目目录中执行"
-        exit 1
-    fi
-    echo "从 $TOGNIX_MOVE_URL 下载..."
-    curl -fsSL "$TOGNIX_MOVE_URL" -o tognix-move.tar.gz
-    tar xzf tognix-move.tar.gz
-    PROJECT_SRC=$(ls -d tognix-move*/ | head -1)
+    warn "无法检测操作系统类型"
 fi
 
-# pip 安装依赖
-pip3.9 install --upgrade pip || pip3 install --upgrade pip
-pip3.9 install playwright fastapi uvicorn requests openpyxl ||     pip3 install playwright fastapi uvicorn requests openpyxl
+# === Step 2: 安装 Python 3.9 ===
+step 2 "安装 Python 3.9..."
 
-# === 5. 安装 Playwright Chromium ===
-echo "[5/10] 安装 Playwright Chromium..."
-python3.9 -m playwright install chromium || python3 -m playwright install chromium
+# 检查是否已有 Python 3.9
+PYTHON_CMD=""
+if command -v python3.9 &> /dev/null; then
+    PYTHON_CMD="python3.9"
+    ok "Python 3.9 已安装: $(python3.9 --version)"
+elif command -v python3 &> /dev/null; then
+    PY_VER=$(python3 --version 2>&1 | grep -oP '3\.\d+' | head -1)
+    if [[ "$PY_VER" == "3.9" || "$PY_VER" > "3.9" ]]; then
+        PYTHON_CMD="python3"
+        ok "Python 已安装: $(python3 --version)"
+    fi
+fi
 
-# === 6. 部署项目 ===
-echo "[6/10] 部署项目到 /opt/tognix-move/..."
+if [ -z "$PYTHON_CMD" ]; then
+    echo "  正在安装 Python 3.9..."
+    dnf module enable -y python39 2>/dev/null || true
+    dnf install -y python39 python39-pip 2>/dev/null || true
+    PYTHON_CMD="python3.9"
+    ok "Python 3.9 安装完成"
+fi
 
-# 创建目标目录
+# === Step 3: 安装系统依赖 ===
+step 3 "安装系统依赖 (Playwright)..."
+dnf install -y     atk at-spi2-atk cups-libs libdrm libgbm gtk3     nspr nss xorg-x11-server-Xvfb libxkbcommon     alsa-lib liberation-fonts-fontconfig 2>/dev/null || true
+ok "系统依赖安装完成"
+
+# === Step 4: 创建安装目录 ===
+step 4 "创建安装目录 /opt/tognix-move..."
 mkdir -p /opt/tognix-move
+ok "目录已创建"
 
-# 复制文件
-cp -r $PROJECT_SRC/src /opt/tognix-move/
-cp -r $PROJECT_SRC/static /opt/tognix-move/
-cp -r $PROJECT_SRC/tests /opt/tognix-move/ 2>/dev/null || true
-cp $PROJECT_SRC/requirements.txt /opt/tognix-move/ 2>/dev/null || true
+# === Step 5: 解压程序文件 ===
+step 5 "解压程序文件..."
 
-# 创建配置文件模板
-if [ ! -f /opt/tognix-move/config.yaml ]; then
-    cat > /opt/tognix-move/config.yaml << 'CONFIG_EOF'
-# Tognix-Move 配置文件
-# 请填写您的 Zabbix 和 Tognix 服务地址
+# 检测安装包位置
+PKG_DIR=""
+if [ -f "./tognix-move.tar.gz" ]; then
+    PKG_DIR="./tognix-move.tar.gz"
+elif [ -f "./install.sh" ] && [ -d "./src" ]; then
+    # 已解压状态，直接复制
+    PKG_DIR="local"
+fi
 
-zabbix:
-  url: ""  # 例如: http://192.168.1.100/zabbix/api_jsonrpc.php
-
-tognix:
-  url: ""  # 例如: https://192.168.1.200:1618/api_jsonrpc.php
-CONFIG_EOF
-    echo "配置文件已创建: /opt/tognix-move/config.yaml"
-    echo "请安装后编辑此文件填写您的服务地址"
+if [ "$PKG_DIR" = "local" ]; then
+    cp -r ./src /opt/tognix-move/
+    cp -r ./static /opt/tognix-move/
+    cp -r ./tests /opt/tognix-move/ 2>/dev/null || true
+    cp -r ./deps /opt/tognix-move/ 2>/dev/null || true
+    cp ./requirements.txt /opt/tognix-move/ 2>/dev/null || true
+    FILE_COUNT=$(find /opt/tognix-move -type f | wc -l)
+    ok "文件复制完成 ($FILE_COUNT 个文件)"
+elif [ -n "$PKG_DIR" ]; then
+    tar xzf "$PKG_DIR" -C /opt/ 2>/dev/null ||     tar xzf "$PKG_DIR" --strip-components=1 -C /opt/tognix-move/
+    FILE_COUNT=$(find /opt/tognix-move -type f | wc -l)
+    ok "文件解压完成 ($FILE_COUNT 个文件)"
+else
+    err "未找到安装包"
+    exit 1
 fi
 
 cd /opt/tognix-move
 
-# === 7. 修改端口（如果需要） ===
-echo "[7/10] 配置端口 800..."
-
-# 检查并修改 config.py 中的端口
-if [ -f src/config.py ]; then
-    sed -i 's/"port": 8003/"port": 800/g' src/config.py || true
+# === Step 6: 安装 Python 依赖 (离线模式) ===
+step 6 "安装 Python 依赖 (离线模式)..."
+if [ -d "deps" ]; then
+    $PYTHON_CMD -m pip install --no-index --find-links=deps/ -r requirements.txt 2>&1 | tail -3
+    $PYTHON_CMD -m pip install --no-index --find-links=deps/ playwright 2>&1 | tail -3
+    ok "Python 依赖安装完成 (离线模式)"
+else
+    warn "deps/ 目录不存在，跳过离线安装"
 fi
 
-# === 8. 创建 systemd 服务 ===
-echo "[8/10] 创建 systemd 服务..."
+# === Step 7: 安装 Playwright Chromium (离线模式) ===
+step 7 "安装 Playwright Chromium (离线模式)..."
+if [ -f "deps/playwright-chromium.tar.gz" ]; then
+    mkdir -p ~/.cache/ms-playwright
+    tar xzf deps/playwright-chromium.tar.gz -C ~/.cache/ms-playwright/
+    ok "Chromium 浏览器就绪 (离线模式)"
+else
+    warn "playwright-chromium.tar.gz 不存在，跳过"
+fi
 
-cat > /etc/systemd/system/tognix-move.service << 'SERVICE_EOF'
+# === Step 8: 配置 systemd 服务 ===
+step 8 "配置 systemd 服务..."
+
+# 检测端口（默认 800）
+PORT=$(grep -oP '"port": \K\d+' src/config.py 2>/dev/null || echo "800")
+
+cat > /etc/systemd/system/tognix-move.service << SERVICE_EOF
 [Unit]
 Description=Tognix-Move Migration Tool
 After=network.target
@@ -136,73 +140,67 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/tognix-move
-ExecStart=/usr/bin/python3.9 /opt/tognix-move/src/main.py
+ExecStart=/usr/bin/$PYTHON_CMD /opt/tognix-move/src/main.py
 Restart=always
 RestartSec=3
+Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target
 SERVICE_EOF
 
-# 如果 python3.9 不存在，用 python3
-if ! command -v python3.9 &> /dev/null; then
-    sed -i 's/python3.9/python3/g' /etc/systemd/system/tognix-move.service
-fi
-
 systemctl daemon-reload
 systemctl enable tognix-move
+ok "systemd 服务已注册 (端口 $PORT)"
 
-# === 9. 防火墙配置 ===
-echo "[9/10] 配置防火墙..."
-
-if systemctl is-active firewalld &> /dev/null; then
-    firewall-cmd --permanent --add-port=800/tcp
-    firewall-cmd --reload
-    echo "防火墙已放行 800 端口"
-else
-    echo "firewalld 未运行，跳过防火墙配置"
-fi
-
-# === 10. 启动服务并验证 ===
-echo "[10/10] 启动服务并验证..."
-
+# === Step 9: 启动并验证服务 ===
+step 9 "启动服务并验证..."
 systemctl restart tognix-move
-
-# 等待服务启动
 sleep 3
 
-# 验证
 if systemctl is-active --quiet tognix-move; then
-    echo "服务状态: Active (running)"
+    ok "服务已启动: Active (running)"
 else
-    echo "警告: 服务未能正常启动"
-    systemctl status tognix-move
+    err "服务未能正常启动"
+    systemctl status tognix-move --no-pager
+    exit 1
 fi
 
-# curl 验证
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:800/ 2>/dev/null || echo "000")
+# HTTP 验证
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/ 2>/dev/null || echo "000")
 if [ "$HTTP_CODE" = "200" ]; then
-    echo "HTTP 验证: 成功 (200 OK)"
+    ok "HTTP 验证成功 (状态码: 200)"
 else
-    echo "警告: HTTP 验证失败 (状态码: $HTTP_CODE)"
+    warn "HTTP 验证异常 (状态码: $HTTP_CODE)"
 fi
 
-echo "=========================================="
-echo "  安装完成!"
-echo "=========================================="
+# === 安装完成 ===
 echo ""
-echo "安装位置: /opt/tognix-move/"
-echo "访问地址: http://<服务器IP>:800/"
-echo "配置文件: /opt/tognix-move/config.yaml"
-echo ""
-echo "管理命令:"
-echo "  启动: systemctl start tognix-move"
-echo "  停止: systemctl stop tognix-move"
-echo "  重启: systemctl restart tognix-move"
-echo "  状态: systemctl status tognix-move"
-echo ""
-echo "请编辑 /opt/tognix-move/config.yaml 填写您的 Zabbix/Tognix 地址"
+echo "${GREEN}╔════════════════════════════════════════════════╗${NC}"
+echo "${GREEN}║  ✅ Tognix-Move 安装完成！                    ║${NC}"
+echo "${GREEN}╠════════════════════════════════════════════════╣${NC}"
+
+# 自动检测本机 IP
+LOCAL_IP=$(ip -4 addr show scope global | grep -oP 'inet \K[\d.]+' | head -1)
+if [ -z "$LOCAL_IP" ]; then
+    LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+fi
+if [ -z "$LOCAL_IP" ]; then
+    LOCAL_IP="<服务器IP>"
+fi
+
+echo "${GREEN}║                                              ║${NC}"
+echo "${GREEN}║  访问地址: http://$LOCAL_IP:$PORT            ║${NC}"
+echo "${GREEN}║                                              ║${NC}"
+echo "${GREEN}║  管理命令:                                   ║${NC}"
+echo "${GREEN}║    systemctl start|stop|restart tognix-move  ║${NC}"
+echo "${GREEN}║    journalctl -u tognix-move -f              ║${NC}"
+echo "${GREEN}║                                              ║${NC}"
+echo "${GREEN}╚════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# 清理临时目录
-rm -rf $TEMP_DIR 2>/dev/null || true
+# 提示配置文件
+if [ -f /opt/tognix-move/config.yaml ]; then
+    echo "配置文件位置: /opt/tognix-move/config.yaml"
+    echo "请编辑此文件填写您的 Zabbix/Tognix 地址"
+fi
