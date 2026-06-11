@@ -926,8 +926,9 @@ async function loadHostPreview() {
       let snmpCount = 0;
       data.hosts.forEach(h => {
         const isSNMP = h.type === 'snmp' || h.interface_type === '2';
-        // 从 macros 数组提取 SNMP 团体名，无宏时默认 public
+        // 优先使用后端提取的 snmp_community（来自 interface.details）
         let community = h.snmp_community || '';
+        // 如果没有，再从 macros 数组提取
         if (!community && h.macros) {
           const m = h.macros.find(item => item.macro === '{$SNMP_COMMUNITY}');
           if (m) community = m.value;

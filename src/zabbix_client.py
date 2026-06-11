@@ -55,7 +55,7 @@ class ZabbixClient:
         """获取所有主机（含接口和模板）"""
         return self._call("host.get", {
             "output": ["hostid", "host", "name", "status"],
-            "selectInterfaces": ["ip", "dns", "port", "type", "main"],
+            "selectInterfaces": ["ip", "dns", "port", "type", "main", "details"],
             "selectParentTemplates": ["host", "name"],
             "selectMacros": ["macro", "value"],
         })

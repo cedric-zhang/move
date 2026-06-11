@@ -83,10 +83,23 @@ def zabbix_preview(req: ZabbixPreviewRequest):
         preview = []
         for h in hosts:
             main_iface = {}
+            snmp_community = None
             for iface in h.get("interfaces", []):
                 if iface.get("main") == "1":
                     main_iface = iface
+                    # 从 interface.details 提取 SNMP 团体名
+                    if iface.get("type") == "2":  # SNMP
+                        details = iface.get("details", {})
+                        snmp_community = details.get("community", None)
                     break
+
+            # 如果 details 中没有，再从 macros 提取
+            if not snmp_community and h.get("macros"):
+                for m in h.get("macros", []):
+                    if "SNMP_COMMUNITY" in m.get("macro", ""):
+                        snmp_community = m.get("value")
+                        break
+
             templates = [t["host"] for t in h.get("parentTemplates", [])]
             src_tpl = templates[0] if templates else ""
             preview.append({
@@ -98,6 +111,7 @@ def zabbix_preview(req: ZabbixPreviewRequest):
                 "interface_type": main_iface.get("type", ""),
                 "src_template": src_tpl,
                 "macros": h.get("macros", []),
+                "snmp_community": snmp_community,  # 新增：团体名
             })
         return {"success": True, "hosts": preview, "total_hosts": len(hosts)}
     except Exception as e:
