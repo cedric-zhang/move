@@ -176,6 +176,11 @@ def credentials_import(req: CredentialImportRequest):
             for h in hosts:
                 for iface in h.get("interfaces", []):
                     if iface.get("type") == "2":  # SNMP
+                        # 优先从 interface.details 提取
+                        details = iface.get("details", {})
+                        if details.get("community"):
+                            communities.add(details.get("community"))
+                        # 再从 macros 提取
                         for m in h.get("macros", []):
                             if "SNMP_COMMUNITY" in m.get("macro", ""):
                                 communities.add(m.get("value", "public"))
@@ -313,10 +318,18 @@ def migrate_preview(req: MigratePreviewRequest):
 
             snmp_community = None
             if iface_type == "2":
-                for m in h.get("macros", []):
-                    if "SNMP_COMMUNITY" in m.get("macro", ""):
-                        snmp_community = m.get("value", "public")
+                # 优先从 interface.details 提取
+                for iface in h.get("interfaces", []):
+                    if iface.get("main") == "1":
+                        details = iface.get("details", {})
+                        snmp_community = details.get("community")
                         break
+                # 再从 macros 提取
+                if not snmp_community:
+                    for m in h.get("macros", []):
+                        if "SNMP_COMMUNITY" in m.get("macro", ""):
+                            snmp_community = m.get("value", "public")
+                            break
                 if not snmp_community:
                     snmp_community = "public"
 
