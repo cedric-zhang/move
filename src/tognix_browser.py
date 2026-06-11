@@ -24,15 +24,25 @@ def parse_tognix_url(api_url: str) -> tuple:
 
 async def login_vue(page, username: str, password: str):
     """登录 Vue 前端"""
-    await page.wait_for_selector("input[placeholder*='账号']", timeout=10000)
-    await page.wait_for_selector("input[placeholder*='密码']", timeout=10000)
+    # 使用通用选择器，避免中文编码问题
+    await page.wait_for_selector("input", timeout=15000)
 
-    await page.fill("input[placeholder*='账号']", username)
-    await page.fill("input[placeholder*='密码']", password)
-    await page.click("button:has-text('登录')")
+    # 填充账号和密码
+    inputs = await page.query_selector_all("input")
+    for inp in inputs:
+        inp_type = await inp.get_attribute("type")
+        if inp_type == "text":
+            await inp.fill(username)
+        elif inp_type == "password":
+            await inp.fill(password)
 
-    # 等待登录成功（token写入localStorage）- 15秒超时
-    await page.wait_for_function("() => localStorage.getItem('zops-token')", timeout=15000)
+    # 点击登录按钮（通用选择器）
+    btns = await page.query_selector_all("button")
+    if btns:
+        await btns[0].click()
+
+    # 等待登录成功（token写入localStorage）- 30秒超时
+    await page.wait_for_function("() => localStorage.getItem('zops-token')", timeout=30000)
 
 
 async def get_zops_token(username: str = "Admin", password: str = "", api_url: str = DEFAULT_API_URL) -> str:
