@@ -5,25 +5,26 @@ import json
 from playwright.async_api import async_playwright
 from urllib.parse import urlparse
 
-# 默认 URL（用于兼容旧调用）
-DEFAULT_TOGNIX_URL = "https://192.168.31.128"
-DEFAULT_API_URL = "https://192.168.31.128:1618/api_jsonrpc.php?lang=zh_CN"
-
 # 从环境变量读取超时配置，单位秒（默认60秒）
 DEFAULT_LOGIN_TIMEOUT = int(os.getenv("TOGNIX_LOGIN_TIMEOUT", "60"))
 
 
-def parse_tognix_url(api_url: str) -> tuple:
+def parse_tognix_url(api_url: str) -> str:
     """
     从 API URL 解析出 Vue 前端 URL
 
     输入: https://192.168.31.95:1618/api_jsonrpc.php
     输出: vue_url = https://192.168.31.95 (端口 443)
     """
+    if not api_url:
+        raise ValueError("api_url 参数必须传入，不能为空")
+
     parsed = urlparse(api_url)
-    host = parsed.hostname or "192.168.31.128"
+    if not parsed.hostname:
+        raise ValueError(f"无法从 URL 解析主机名: {api_url}")
+
     scheme = parsed.scheme or "https"
-    return f"{scheme}://{host}"
+    return f"{scheme}://{parsed.hostname}"
 
 
 async def login_vue(page, username: str, password: str, timeout: int = None):
@@ -51,8 +52,11 @@ async def login_vue(page, username: str, password: str, timeout: int = None):
     await page.wait_for_function("() => localStorage.getItem('zops-token')", timeout=timeout_ms)
 
 
-async def get_zops_token(username: str = "Admin", password: str = "", api_url: str = DEFAULT_API_URL, timeout: int = None) -> str:
+async def get_zops_token(username: str = "Admin", password: str = "", api_url: str = None, timeout: int = None) -> str:
     """启动 headless 浏览器，登录获取 token"""
+    if not api_url:
+        raise ValueError("api_url 参数必须传入，不能为空")
+
     vue_url = parse_tognix_url(api_url)
     timeout_sec = timeout or DEFAULT_LOGIN_TIMEOUT
     timeout_ms = timeout_sec * 1000
@@ -75,12 +79,11 @@ async def get_zops_token(username: str = "Admin", password: str = "", api_url: s
         return token
 
 
-def get_token_sync(username: str = "Admin", password: str = "", api_url: str = DEFAULT_API_URL, timeout: int = None) -> str:
+def get_token_sync(username: str = "Admin", password: str = "", api_url: str = None, timeout: int = None) -> str:
     """同步包装器"""
     return asyncio.run(get_zops_token(username, password, api_url, timeout))
 
 
 if __name__ == "__main__":
-    token = get_token_sync()
-    preview = token[:16] if token else "None"
-    print("Token: " + preview + "...")
+    # 测试需要传入实际参数
+    print("使用示例: get_token_sync(username='Admin', password='xxx', api_url='https://host:1618/api_jsonrpc.php')")

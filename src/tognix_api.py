@@ -4,12 +4,12 @@ import json
 import urllib3
 urllib3.disable_warnings()
 
-# 默认 URL（用于兼容旧调用）
-DEFAULT_API_URL = "https://192.168.31.128:1618/api_jsonrpc.php?lang=zh_CN"
 
-
-def check_ip_exists(token: str, ip: str, api_url: str = DEFAULT_API_URL) -> dict:
+def check_ip_exists(token: str, ip: str, api_url: str = None) -> dict:
     """检查 Tognix 是否已存在该 IP 的主机"""
+    if not api_url:
+        return {"exists": False, "error": "api_url 参数必须传入"}
+
     payload = {
         "jsonrpc": "2.0",
         "method": "host.get",
@@ -37,8 +37,10 @@ def check_ip_exists(token: str, ip: str, api_url: str = DEFAULT_API_URL) -> dict
         return {"exists": False, "error": str(e)}
 
 
-def create_host_direct(token: str, ip: str, credentials: list, hostgroupid: str = "1", status: str = "0", api_url: str = DEFAULT_API_URL) -> dict:
+def create_host_direct(token: str, ip: str, credentials: list, hostgroupid: str = "1", status: str = "0", api_url: str = None) -> dict:
     """使用 Python requests 直接调用 host.createhost API"""
+    if not api_url:
+        return {"success": False, "error": "api_url 参数必须传入"}
 
     # 先检查 IP 是否已存在
     ip_check = check_ip_exists(token, ip, api_url)
