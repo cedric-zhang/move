@@ -98,7 +98,7 @@ step 5 "安装 Chromium 系统依赖..."
 if [ -d "rpm-deps" ]; then
     RPM_COUNT=$(ls rpm-deps/*.rpm 2>/dev/null | wc -l)
     echo "  检测到 $RPM_COUNT 个 RPM 包"
-    rpm -Uvh --nosignature --nodeps rpm-deps/*.rpm 2>&1 | tail -5
+    rpm -Uvh --nosignature --nodeps --force rpm-deps/*.rpm 2>&1 | tail -5
     ldconfig
     ok "Chromium 系统依赖已安装"
 else
