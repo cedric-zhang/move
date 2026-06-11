@@ -200,12 +200,12 @@ class TognixConnectRequest(BaseModel):
 @app.post("/api/tognix/connect")
 def tognix_connect(req: TognixConnectRequest):
     """连接 Tognix（测试连接必须验证用户密码，不使用缓存）"""
-    # 测试连接时必须用用户输入的账号密码验证
+    # 测试连接时必须用用户输入的账号密码验证，使用短超时（10秒）
     try:
         if req.token:
             token = req.token
         else:
-            token = get_token_sync(username=req.username, password=req.password, api_url=req.url)
+            token = get_token_sync(username=req.username, password=req.password, api_url=req.url, timeout=10)
         if not token:
             return {"success": False, "error": "登录失败：账号或密码错误"}
     except Exception as e:
